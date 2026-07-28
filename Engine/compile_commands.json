@@ -1,0 +1,14 @@
+[
+  {
+    "directory": "/home/link/Programming/Dust/Engine",
+    "file": "/home/link/Programming/Dust/Engine/src/DustEngine.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/DustEngine.cpp.d -c /home/link/Programming/Dust/Engine/src/DustEngine.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/DustEngine.cpp.o",
+    "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/DustEngine.cpp.o"
+  },
+  {
+    "directory": "/home/link/Programming/Dust/Engine",
+    "file": "/home/link/Programming/Dust/Engine/src/Core/Window.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Window.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/Window.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Window.cpp.o",
+    "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Window.cpp.o"
+  }
+]

@@ -1,0 +1,8 @@
+[
+  {
+    "directory": "/home/link/Programming/Dust/Runtime",
+    "file": "/home/link/Programming/Dust/Runtime/src/main.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Runtime/include -I/home/link/Programming/Dust/Runtime/../Engine/include -I/home/link/Programming/Dust/Runtime/../ECS/include   -I/home/link/Programming/Dust/Runtime/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include -MMD -MF /home/link/Programming/Dust/Runtime/zora-build/Runtime/src/main.cpp.d -c /home/link/Programming/Dust/Runtime/src/main.cpp -o /home/link/Programming/Dust/Runtime/zora-build/Runtime/src/main.cpp.o",
+    "output": "/home/link/Programming/Dust/Runtime/zora-build/Runtime/src/main.cpp.o"
+  }
+]

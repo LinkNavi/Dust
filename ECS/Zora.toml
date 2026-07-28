@@ -1,0 +1,8 @@
+[project]
+name = "ECS"
+version = "0.1.0"
+
+[target.ECS]
+type = "staticlib"
+sources = ["src/**/*.cpp"]
+include_dirs = ["include"]

@@ -1,0 +1,5 @@
+zora build to just build everything
+
+zora run Runtime to run the runtime
+
+zora to just get the help

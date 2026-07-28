@@ -1,0 +1,30 @@
+[project]
+name = "Engine"
+version = "0.1.0"
+
+[target.Engine]
+type = "staticlib"
+sources = ["src/**/*.cpp"]
+include_dirs = ["include"]
+
+[[target.Engine.deps]]
+name = "ECS"
+path = "../ECS"
+
+[[target.Engine.deps]]
+name = "vk-bootstrap"
+git  = "https://github.com/charles-lunarg/vk-bootstrap"
+
+[[target.Engine.deps]]
+name = "VulkanMemoryAllocator"
+git  = "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator"
+
+[[target.Engine.deps]]
+name = "vulkan-headers"
+git  = "https://github.com/KhronosGroup/vulkan-headers"
+
+[[target.Engine.deps]]
+system = "glfw3"
+
+[[target.Engine.deps]]
+system = "vulkan"

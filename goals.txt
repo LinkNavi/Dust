@@ -1,0 +1,42 @@
+In order of completeness
+
+Renderer Core {
+    Window Making
+    Model loading (OBJ first, assimp later)
+    Basic custom shaders
+    Camera
+    fast asf
+    Not style locked
+}
+
+Entity System {
+    Unity like system
+    Hierarchy based
+    Custom made
+    fast asf
+}
+
+Good Rendering {
+    Full model loading via assimp
+    Fog
+    Particle system
+    Bloom
+    Dynamic textures
+    Vert/face generation with custom textures
+    fast asf
+}
+
+Encrypted Asset System {
+    Compressed assets (zstd)
+    Locked in a vault for safety (XChaCha20)
+}
+
+Networking {
+    Basic networking stack for web thingies and multiplayer with custom protocol
+}
+
+Scripting {
+    fast asf
+    Easy modding
+    Custom language (Hylian)
+}

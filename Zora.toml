@@ -1,0 +1,5 @@
+[project]
+name = "Dust"
+
+[workspace]
+members = ["ECS", "Engine", "Runtime"]

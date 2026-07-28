@@ -1,0 +1,8 @@
+[
+  {
+    "directory": "/home/link/Programming/Dust/ECS",
+    "file": "/home/link/Programming/Dust/ECS/src/DustECS.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/ECS/include -MMD -MF /home/link/Programming/Dust/ECS/zora-build/ECS/src/DustECS.cpp.d -c /home/link/Programming/Dust/ECS/src/DustECS.cpp -o /home/link/Programming/Dust/ECS/zora-build/ECS/src/DustECS.cpp.o",
+    "output": "/home/link/Programming/Dust/ECS/zora-build/ECS/src/DustECS.cpp.o"
+  }
+]

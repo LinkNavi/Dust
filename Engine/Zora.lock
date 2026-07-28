@@ -1,0 +1,18 @@
+[[dep]]
+name   = "vk-bootstrap"
+git    = "https://github.com/charles-lunarg/vk-bootstrap"
+commit = "556b79b165386f6c1a18362d30f2a076fdaa2778"
+built  = true
+
+[[dep]]
+name   = "VulkanMemoryAllocator"
+git    = "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator"
+commit = "3aa921224c154a0d2c43912bc88e1c42ce1f7607"
+built  = true
+
+[[dep]]
+name   = "vulkan-headers"
+git    = "https://github.com/KhronosGroup/vulkan-headers"
+commit = "d314eae73fdc90847bb8304a86ee7c6a8ee023b6"
+built  = true
+

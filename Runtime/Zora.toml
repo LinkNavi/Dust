@@ -1,0 +1,37 @@
+[project]
+name = "Runtime"
+version = "0.1.0"
+
+[target.Runtime]
+type = "bin"
+sources = ["src/**/*.cpp"]
+include_dirs = ["include"]
+
+[[target.Runtime.deps]]
+name = "Engine"
+path = "../Engine"
+
+# Engine.hpp transitively includes DustECS.hpp, so Runtime needs -I into ECS's
+# include dir too (path deps don't propagate through Engine automatically).
+[[target.Runtime.deps]]
+name = "ECS"
+path = "../ECS"
+
+# Engine's staticlib doesn't carry its own link-time deps forward, so these
+# need to be declared here too so the final Runtime binary link succeeds.
+[[target.Runtime.deps]]
+name = "vk-bootstrap"
+git  = "https://github.com/charles-lunarg/vk-bootstrap"
+
+# Also needed here (even though Runtime's own code never touches it) — it's
+# what lets vk-bootstrap's cmake build find a matching Vulkan-Headers via
+# CMAKE_PREFIX_PATH instead of falling back to the (mismatched) system SDK.
+[[target.Runtime.deps]]
+name = "vulkan-headers"
+git  = "https://github.com/KhronosGroup/vulkan-headers"
+
+[[target.Runtime.deps]]
+system = "glfw3"
+
+[[target.Runtime.deps]]
+system = "vulkan"
