@@ -27,6 +27,11 @@ struct Camera {
 
     // Mouse-look helper — feed raw cursor delta in degrees, pitch clamped
     void rotate(float deltaYawDeg, float deltaPitchDeg, float pitchLimitDeg = 89.0f);
+
+    // One-shot "point at this" — sets yaw/pitch from position toward target.
+    // Raylib-style Camera.target ergonomics without giving up the yaw/pitch
+    // representation the rest of Camera (rotate()) is built around.
+    void lookAt(glm::vec3 target);
 };
 
 } // namespace Dust

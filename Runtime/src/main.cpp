@@ -1,78 +1,44 @@
 #include "DustEngine.hpp"
-#include "Core/Rendering/Mesh.hpp"
-#include "Core/Rendering/Camera.hpp"
-#include "AssetManager/AssetManager.hpp"
 #include "Log.hpp"
 #include <cstdio>
-#include <glm/gtc/matrix_transform.hpp>
 
-// Placeholder — packed with `DustPacker Models assets.pack <this>`.
+// Placeholder — packed with `DustPacker Models models.pack <this>`.
 // Swap for real key management once that's a thing.
 static constexpr const char* kAssetPackKey = "weup";
 
 int main() {
     Dust::set_log_level(1);
+
     Dust::DustEngine e;
-    e.init("DustEngine");
-
-    glfwWindowHint(GLFW_FLOATING, GLFW_TRUE); // must come after e.init() (glfwInit)
-
-    Dust::log("Vulkan ", e.vulkan.tier.vulkanMajor, ".", e.vulkan.tier.vulkanMinor, ".", e.vulkan.tier.vulkanPatch);
-    Dust::log("Dynamic Rendering: ", e.vulkan.tier.dynamicRendering);
-    Dust::log("Mesh Shaders: ",      e.vulkan.tier.meshShaders);
-    Dust::log("Ray Tracing: ",       e.vulkan.tier.raytracing);
-
-    e.windows.create({ .name="main", .title="DustEngine", .width=1280, .height=720 }, e.vulkan);
-    Dust::Window* w = e.windows.get("main");
-    w->renderer.init(e.vulkan, w->swapchain);
-    w->setClearColor(0.05f, 0.05f, 0.05f);
+    if (!e.init("DustEngine", 1280, 720)) return 1;
 
     Dust::AssetManager assets;
     if (!assets.open("models.pack", kAssetPackKey)) {
-        fprintf(stderr, "dust: failed to open assets.pack\n");
+        fprintf(stderr, "dust: failed to open models.pack\n");
         return 1;
     }
-
-    Dust::Mesh cube;
-    {
-        Dust::AssetHandle h = assets.load("cube.obj");
-        if (!Dust::valid(h)) {
-            fprintf(stderr, "dust: cube.obj not found in assets.pack\n");
-            return 1;
-        }
-        const std::vector<uint8_t>* bytes = assets.data(h);
-        cube = Dust::Mesh::loadOBJFromMemory(bytes->data(), bytes->size());
-        assets.release(h); // GPU upload below copies it off; don't need to keep decoded bytes around
-    }
-    cube.upload(e.vulkan);
+    Dust::Model cube = e.loadModelFromPack(assets, "cube.obj");
+    assets.close();
 
     Dust::Camera camera;
-    camera.position = { 0.0f, 0.0f, 3.0f }; // looking at the cube down -Z
+    camera.position = { 0.0f, 1.5f, 3.0f };
+    camera.lookAt({ 0.0f, 0.0f, 0.0f });
+    camera.fovDeg = 45.0f;
 
-    float spin = 0.0f;
+    float rotation = 0.0f;
 
-    e.run([&](float dt) {
-        if (!w->renderer.beginFrame(e.vulkan, *w)) return;
-        w->renderer.beginRendering(e.vulkan, *w);
+    while (!e.shouldClose()) {
+        rotation += e.deltaTime() * 60.0f; // degrees/sec, matches the raylib example's +=1 per frame @60fps
 
-        spin += dt; // radians/sec, tumbles on a tilted axis so all faces read
-        glm::mat4 model = glm::rotate(glm::mat4(1.0f), spin, glm::normalize(glm::vec3(0.3f, 1.0f, 0.0f)));
+        e.beginDrawing();
+            e.clearBackground(0.05f, 0.05f, 0.05f);
+            e.beginMode3D(camera);
+                e.drawModel(cube, { 0.0f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, rotation);
+            e.endMode3D();
+        e.endDrawing();
+    }
 
-        float aspect = (float)w->width / (float)(w->height ? w->height : 1);
-        glm::mat4 mvp = camera.viewProj(aspect) * model;
-
-        w->renderer.draw(w->renderer.cmd(), cube,
-                         w->renderer.defaultPipeline,
-                         w->renderer.defaultLayout,
-                         &mvp[0][0]);
-
-        w->renderer.endRendering();
-        w->renderer.endFrame(e.vulkan, *w);
-    });
-
-    vkDeviceWaitIdle(e.vulkan.device); // GPU may still be using cube's buffers from the last frame
-    cube.destroy(e.vulkan);
-    assets.close();
+    e.unloadModel(cube);
     e.shutdown();
     return 0;
 }

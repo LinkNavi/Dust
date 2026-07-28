@@ -23,7 +23,7 @@ Entity System {
     ECS core [DONE]
     Named entities [DONE]
     Root entity [DONE]
-    Transform component
+    Transform component [DONE]
     fast asf
 }
 
@@ -43,22 +43,21 @@ Font System{
 }
 
 UI {
-Support Outlines
-Support Rounded Corners
-Support Sprites
-Support Anchoring (a way to format ui no matter screen size, for example an element would anchor center then have an  offset based on the screen dimensions)
-Support Immediate Mode rendering (live updating ui)
+    Support Outlines
+    Support Rounded Corners
+    Support Sprites
+    Support Anchoring (a way to format ui no matter screen size, for example an element would anchor center then have an  offset based on the screen dimensions)
+    Support Immediate Mode rendering (live updating ui)
 }
 
 Encrypted Asset System {
-    Compressed assets (zstd)
-    Locked in a vault for safety (XChaCha20)
+    Compressed assets (zstd) [DONE]
+    Locked in a vault for safety (XChaCha20) [DONE]
 }
 
 QOL {
-
-Add a physics engine (PhysX)
-Make Engine as easy to use as Raylib
+    Add a physics engine (Jolt)
+    Make Engine as easy to use as Raylib
 }
 
 Networking {

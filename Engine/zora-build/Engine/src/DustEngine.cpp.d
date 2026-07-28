@@ -1,9 +1,9 @@
 /home/link/Programming/Dust/Engine/zora-build/Engine/src/DustEngine.cpp.o: \
   /home/link/Programming/Dust/Engine/zora-build/Engine/zora_pch.hpp \
   /home/link/Programming/Dust/Engine/include/Log.hpp \
-  /home/link/Programming/Dust/Engine/include/DustEngine.hpp \
-  /home/link/Programming/Dust/Engine/include/Core/Window.hpp \
-  /home/link/Programming/Dust/Engine/include/Core/Rendering/Renderer.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Systems/Entity.hpp \
+  /home/link/Programming/Dust/Engine/../ECS/include/DustECS.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Systems/Transform.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/VulkanContext.hpp \
   /home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include/VkBootstrap.h \
   /home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_core.h \
@@ -25,6 +25,7 @@
   /home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include/vk_mem_alloc.h \
   /home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan.h \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Swapchain.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Rendering/Renderer.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Mesh.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/FrameData.hpp \
   /home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan.hpp \
@@ -35,9 +36,11 @@
   /home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_structs.hpp \
   /home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_funcs.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/DefaultShaders.hpp \
-  /home/link/Programming/Dust/Engine/../ECS/include/DustECS.hpp \
-  /home/link/Programming/Dust/Engine/include/Core/Systems/Entity.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/ShaderModule.hpp \
-  /home/link/Programming/Dust/Engine/include/Core/Rendering/Camera.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/PipelineBuilder.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Rendering/Camera.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Window.hpp \
+  /home/link/Programming/Dust/Engine/include/DustEngine.hpp \
+  /home/link/Programming/Dust/Engine/../AssetManager/include/AssetManager/AssetManager.hpp \
+  /home/link/Programming/Dust/Engine/../AssetManager/include/AssetManager/PackFormat.hpp \
   /home/link/Programming/Dust/Engine/src/DustEngine.cpp

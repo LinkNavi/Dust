@@ -42,4 +42,12 @@ void Camera::rotate(float deltaYawDeg, float deltaPitchDeg, float pitchLimitDeg)
     pitchDeg = std::clamp(pitchDeg + deltaPitchDeg, -pitchLimitDeg, pitchLimitDeg);
 }
 
+void Camera::lookAt(glm::vec3 target) {
+    glm::vec3 dir = target - position;
+    if (glm::length(dir) < 0.0001f) return; // target == position, nothing to point at
+    dir = glm::normalize(dir);
+    pitchDeg = glm::degrees(asinf(dir.y));
+    yawDeg   = glm::degrees(atan2f(dir.z, dir.x));
+}
+
 } // namespace Dust
