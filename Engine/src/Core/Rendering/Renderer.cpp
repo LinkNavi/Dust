@@ -30,7 +30,38 @@ namespace Dust {
 
 void Renderer::shutdown(VulkanContext& ctx) {
     vkDeviceWaitIdle(ctx.device);
+    if (defaultPipeline) { vkDestroyPipeline(ctx.device, defaultPipeline, nullptr); defaultPipeline = VK_NULL_HANDLE; }
+    if (defaultLayout)   { vkDestroyPipelineLayout(ctx.device, defaultLayout, nullptr); defaultLayout = VK_NULL_HANDLE; }
     destroyFrameData(ctx);
+}
+
+
+void Renderer::draw(VkCommandBuffer cmd, Mesh& mesh,
+                    VkPipeline pipeline, VkPipelineLayout layout,
+                    const float transform[16]) {
+    if (mesh.dirty) return; // must upload first
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &mesh.vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    // identity matrix if none provided
+    float identity[16] = {
+        1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1
+    };
+    vkCmdPushConstants(cmd, layout,
+        VK_SHADER_STAGE_VERTEX_BIT, 0, 64,
+        transform ? transform : identity);
+
+    // set dynamic viewport + scissor
+    VkViewport vp{ 0,0,(float)currentExtent.width,(float)currentExtent.height,0,1 };
+    VkRect2D   sc{ {0,0}, currentExtent };
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+
+    vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
 }
 
 bool Renderer::beginFrame(VulkanContext& ctx, Window& window) {
@@ -59,7 +90,7 @@ bool Renderer::beginFrame(VulkanContext& ctx, Window& window) {
         VK_NULL_HANDLE,
         &imageIndex
     );
-
+currentExtent = window.swapchain.extent;
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         window.swapchain.rebuild(ctx, window);
         return false;

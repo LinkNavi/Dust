@@ -21,6 +21,10 @@ struct PipelineBuilder {
     VkPrimitiveTopology topology    = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     VkPolygonMode       polygonMode = VK_POLYGON_MODE_FILL;
     VkCullModeFlags     cullMode    = VK_CULL_MODE_BACK_BIT;
+    // Standard authoring convention (matches OBJ export and Camera's
+    // projection, which Y-flips to correct for Vulkan's Y-down clip space —
+    // see Camera::projection). If you push a transform that skips Camera
+    // (e.g. raw identity, no Y-flip), winding will appear reversed.
     VkFrontFace         frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     bool                depthTest   = false; // off until depth buffer added
     bool                blendEnable = false;

@@ -18,6 +18,10 @@ name = "ECS"
 path = "../ECS"
 
 [[target.Engine.deps]]
+name = "AssetManager"
+path = "../AssetManager"
+
+[[target.Engine.deps]]
 name = "vk-bootstrap"
 git  = "https://github.com/charles-lunarg/vk-bootstrap"
 

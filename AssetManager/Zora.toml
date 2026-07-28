@@ -1,0 +1,8 @@
+[project]
+name = "AssetManager"
+version = "0.1.0"
+
+[target.AssetManager]
+type = "staticlib"
+sources = ["src/**/*.cpp"]
+include_dirs = ["include"]

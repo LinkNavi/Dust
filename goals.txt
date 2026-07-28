@@ -2,10 +2,13 @@ In order of completeness
 
 Renderer Core {
     Window Making [DONE]
-    Vulkan instance + device setup
-    Swapchain + render pass
-    Basic custom shaders (vert/frag loading)
-    Draw call pipeline
+    Vulkan instance + device setup [DONE]
+    Swapchain [DONE]
+    Dynamic rendering (Vulkan 1.3+) [DONE]
+    Default embedded shaders [DONE]
+    Mesh API — vert/face generation + manipulation [DONE]
+    Draw call pipeline [DONE]
+    Basic custom shaders (vert/frag loading) [DONE]
     Camera
     OBJ model loading
     fast asf
@@ -24,7 +27,6 @@ Entity System {
 
 Good Rendering {
     Full model loading via assimp
-    Mesh API (vert/face generation + manipulation)
     Dynamic textures
     Fog
     Bloom

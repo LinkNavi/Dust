@@ -2,6 +2,7 @@
 
 #include "Core/Rendering/VulkanContext.hpp"
 #include "Core/Rendering/Swapchain.hpp"
+#include "Core/Rendering/Mesh.hpp"
 #include "Core/Rendering/FrameData.hpp"
 #include "Core/Rendering/DefaultShaders.hpp"
 #include <array>
@@ -19,9 +20,11 @@ struct Renderer {
     VkPipeline       defaultPipeline = VK_NULL_HANDLE;
 
     std::vector<VkSemaphore> renderFinishedSemaphores;
-
+VkExtent2D currentExtent = {};
     vkb::DispatchTable dispatch;
-
+    void draw(VkCommandBuffer cmd, Mesh& mesh,
+              VkPipeline pipeline, VkPipelineLayout layout,
+              const float transform[16] = nullptr);
 
     bool init(VulkanContext& ctx, Swapchain& swapchain);
     void shutdown(VulkanContext& ctx);

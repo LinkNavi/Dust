@@ -1,0 +1,8 @@
+[project]
+name = "DustPacker"
+version = "0.1.0"
+
+[target.DustPacker]
+type = "bin"
+sources = ["src/**/*.cpp"]
+include_dirs = ["include"]
