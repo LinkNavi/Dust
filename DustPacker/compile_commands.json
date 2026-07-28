@@ -1,0 +1,8 @@
+[
+  {
+    "directory": "/home/link/Programming/Dust/DustPacker",
+    "file": "/home/link/Programming/Dust/DustPacker/src/main.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/DustPacker/include -I/home/link/Programming/Dust/DustPacker/../AssetManager/include   -MMD -MF /home/link/Programming/Dust/DustPacker/zora-build/DustPacker/src/main.cpp.d -c /home/link/Programming/Dust/DustPacker/src/main.cpp -o /home/link/Programming/Dust/DustPacker/zora-build/DustPacker/src/main.cpp.o",
+    "output": "/home/link/Programming/Dust/DustPacker/zora-build/DustPacker/src/main.cpp.o"
+  }
+]

@@ -262,14 +262,12 @@ namespace {
     }
 }
 
-Mesh Mesh::loadOBJ(const char* path) {
-    Mesh m;
+namespace {
 
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        fprintf(stderr, "dust: failed to open OBJ '%s'\n", path);
-        return m;
-    }
+// Shared by loadOBJ (file) and loadOBJFromMemory (bytes from AssetManager) —
+// both just need to hand this an istream over the .obj text.
+Mesh loadOBJStream(std::istream& file) {
+    Mesh m;
 
     struct V3 { float x, y, z; };
     struct V2 { float x, y; };
@@ -359,6 +357,23 @@ Mesh Mesh::loadOBJ(const char* path) {
         m.recalcNormals();
 
     return m;
+}
+
+} // namespace
+
+Mesh Mesh::loadOBJ(const char* path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        fprintf(stderr, "dust: failed to open OBJ '%s'\n", path);
+        return Mesh{};
+    }
+    return loadOBJStream(file);
+}
+
+Mesh Mesh::loadOBJFromMemory(const uint8_t* data, size_t size) {
+    std::string text((const char*)data, size);
+    std::istringstream stream(text);
+    return loadOBJStream(stream);
 }
 
 } // namespace Dust

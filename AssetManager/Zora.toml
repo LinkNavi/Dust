@@ -6,3 +6,9 @@ version = "0.1.0"
 type = "staticlib"
 sources = ["src/**/*.cpp"]
 include_dirs = ["include"]
+
+[[target.AssetManager.deps]]
+system = "libsodium"
+
+[[target.AssetManager.deps]]
+system = "libzstd"

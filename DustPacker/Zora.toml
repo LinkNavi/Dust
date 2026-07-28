@@ -6,3 +6,16 @@ version = "0.1.0"
 type = "bin"
 sources = ["src/**/*.cpp"]
 include_dirs = ["include"]
+
+# Only needed for the shared PackFormat.hpp (on-disk layout + TOC
+# serialization) — DustPacker does its own compress/encrypt, it doesn't call
+# into AssetManager's reader.
+[[target.DustPacker.deps]]
+name = "AssetManager"
+path = "../AssetManager"
+
+[[target.DustPacker.deps]]
+system = "libsodium"
+
+[[target.DustPacker.deps]]
+system = "libzstd"

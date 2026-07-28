@@ -1,0 +1,8 @@
+[
+  {
+    "directory": "/home/link/Programming/Dust/AssetManager",
+    "file": "/home/link/Programming/Dust/AssetManager/src/AssetManager.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/AssetManager/include   -MMD -MF /home/link/Programming/Dust/AssetManager/zora-build/AssetManager/src/AssetManager.cpp.d -c /home/link/Programming/Dust/AssetManager/src/AssetManager.cpp -o /home/link/Programming/Dust/AssetManager/zora-build/AssetManager/src/AssetManager.cpp.o",
+    "output": "/home/link/Programming/Dust/AssetManager/zora-build/AssetManager/src/AssetManager.cpp.o"
+  }
+]

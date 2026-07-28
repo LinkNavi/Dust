@@ -41,3 +41,15 @@ system = "glfw3"
 
 [[target.Runtime.deps]]
 system = "vulkan"
+
+[[target.Runtime.deps]]
+name = "AssetManager"
+path = "../AssetManager"
+
+# AssetManager's staticlib doesn't carry its own link-time deps forward
+# either — same story as vk-bootstrap/VMA above.
+[[target.Runtime.deps]]
+system = "libsodium"
+
+[[target.Runtime.deps]]
+system = "libzstd"

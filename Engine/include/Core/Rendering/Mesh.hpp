@@ -86,6 +86,10 @@ struct Mesh {
     // color extension is present. recalcNormals() runs automatically if the
     // file has no vn lines.
     static Mesh loadOBJ(const char* path);
+
+    // Same parser, fed from an in-memory buffer — e.g. bytes decoded by
+    // AssetManager, which never touches the filesystem for the raw .obj.
+    static Mesh loadOBJFromMemory(const uint8_t* data, size_t size);
 };
 
 } // namespace Dust

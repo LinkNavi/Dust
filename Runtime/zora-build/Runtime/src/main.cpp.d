@@ -38,4 +38,6 @@
   /home/link/Programming/Dust/Runtime/../ECS/include/DustECS.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Systems/Entity.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Camera.hpp \
+  /home/link/Programming/Dust/Runtime/../AssetManager/include/AssetManager/AssetManager.hpp \
+  /home/link/Programming/Dust/Runtime/../AssetManager/include/AssetManager/PackFormat.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Log.hpp

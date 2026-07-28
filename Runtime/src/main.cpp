@@ -1,8 +1,14 @@
 #include "DustEngine.hpp"
 #include "Core/Rendering/Mesh.hpp"
 #include "Core/Rendering/Camera.hpp"
+#include "AssetManager/AssetManager.hpp"
 #include "Log.hpp"
+#include <cstdio>
 #include <glm/gtc/matrix_transform.hpp>
+
+// Placeholder — packed with `DustPacker Models assets.pack <this>`.
+// Swap for real key management once that's a thing.
+static constexpr const char* kAssetPackKey = "weup";
 
 int main() {
     Dust::set_log_level(1);
@@ -21,7 +27,23 @@ int main() {
     w->renderer.init(e.vulkan, w->swapchain);
     w->setClearColor(0.05f, 0.05f, 0.05f);
 
-    Dust::Mesh cube = Dust::Mesh::loadOBJ("Models/cube.obj");
+    Dust::AssetManager assets;
+    if (!assets.open("models.pack", kAssetPackKey)) {
+        fprintf(stderr, "dust: failed to open assets.pack\n");
+        return 1;
+    }
+
+    Dust::Mesh cube;
+    {
+        Dust::AssetHandle h = assets.load("cube.obj");
+        if (!Dust::valid(h)) {
+            fprintf(stderr, "dust: cube.obj not found in assets.pack\n");
+            return 1;
+        }
+        const std::vector<uint8_t>* bytes = assets.data(h);
+        cube = Dust::Mesh::loadOBJFromMemory(bytes->data(), bytes->size());
+        assets.release(h); // GPU upload below copies it off; don't need to keep decoded bytes around
+    }
     cube.upload(e.vulkan);
 
     Dust::Camera camera;
@@ -50,6 +72,7 @@ int main() {
 
     vkDeviceWaitIdle(e.vulkan.device); // GPU may still be using cube's buffers from the last frame
     cube.destroy(e.vulkan);
+    assets.close();
     e.shutdown();
     return 0;
 }
