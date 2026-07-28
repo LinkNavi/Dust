@@ -1,4 +1,4 @@
-#include "core/Window.hpp"
+#include "Core/Window.hpp"
 #include <cstring>
 #include <cstdio>
 

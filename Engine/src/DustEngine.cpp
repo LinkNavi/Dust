@@ -9,8 +9,12 @@ bool DustEngine::init(const char* appName) {
         fprintf(stderr, "dust: failed to init GLFW\n");
         return false;
     }
+
+    if (!vulkan.init(appName, true)) // false in release
+        return false;
+
+    windows.instance = vulkan.instance; // surfaces now work
     root = { ecs.create(), "root", &ecs };
-    (void)appName;
     return true;
 }
 
@@ -22,13 +26,15 @@ Entity* DustEngine::createEntity(const char* name, Entity* parent) {
 }
 
 void DustEngine::shutdown() {
+    // destroy windows first (surfaces before instance)
     for (auto& w : windows.windows) {
-        if (w.surface && windows.instance != VK_NULL_HANDLE)
-            vkDestroySurfaceKHR(windows.instance, w.surface, nullptr);
+        if (w.surface)
+            vkDestroySurfaceKHR(vulkan.instance, w.surface, nullptr);
         if (w.handle)
             glfwDestroyWindow(w.handle);
     }
     windows.windows.clear();
+    vulkan.shutdown();
     glfwTerminate();
 }
 

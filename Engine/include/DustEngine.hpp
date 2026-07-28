@@ -1,19 +1,21 @@
 // DustEngine.hpp
 #pragma once
-#include "core/Window.hpp"
+#include "Core/Window.hpp"
 #include "DustECS.hpp"
-#include "core/systems/Entity.hpp"
+#include "Core/Systems/Entity.hpp"
+#include "Core/Rendering/VulkanContext.hpp"
 #include <functional>
 #include <list>
 
 namespace Dust {
 
 struct DustEngine {
-    Entity              root;
-    WindowManager       windows;
-    ecs::Registry       ecs;
-    std::list<Entity>   entities;
-    bool                running = true;
+    WindowManager  windows;
+        VulkanContext  vulkan;
+        ecs::Registry  ecs;
+        std::list<Entity> entities;
+        Entity         root;
+        bool           running = true;
 
     Entity* createEntity(const char* name, Entity* parent = nullptr);
     bool    init(const char* appName = "Dust");

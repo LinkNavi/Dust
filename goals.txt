@@ -1,28 +1,34 @@
 In order of completeness
 
 Renderer Core {
-    Window Making
-    Model loading (OBJ first, assimp later)
-    Basic custom shaders
+    Window Making [DONE]
+    Vulkan instance + device setup
+    Swapchain + render pass
+    Basic custom shaders (vert/frag loading)
+    Draw call pipeline
     Camera
+    OBJ model loading
     fast asf
     Not style locked
 }
 
 Entity System {
     Unity like system
-    Hierarchy based
-    Custom made
+    Hierarchy based [DONE]
+    ECS core [DONE]
+    Named entities [DONE]
+    Root entity [DONE]
+    Transform component
     fast asf
 }
 
 Good Rendering {
     Full model loading via assimp
-    Fog
-    Particle system
-    Bloom
+    Mesh API (vert/face generation + manipulation)
     Dynamic textures
-    Vert/face generation with custom textures
+    Fog
+    Bloom
+    Particle system
     fast asf
 }
 
