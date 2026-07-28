@@ -8,9 +8,13 @@ bool VulkanContext::init(const char* appName, bool enableValidation) {
     validationEnabled = enableValidation;
 
     // ── Instance ──
+    // Renderer has no render-pass/framebuffer fallback — it's built entirely
+    // on dynamic rendering, so require 1.3 (where it's core) outright rather
+    // than chase VK_KHR_dynamic_rendering's own extension dependencies
+    // (VK_KHR_depth_stencil_resolve etc.) on older API versions.
     vkb::InstanceBuilder builder;
     builder.set_app_name(appName)
-           .require_api_version(1, 0, 0); // baseline — auto-selects highest available
+           .require_api_version(1, 3, 0);
 
     if (enableValidation)
         builder.request_validation_layers()
@@ -105,9 +109,14 @@ bool VulkanContext::init(const char* appName, bool enableValidation) {
     // presentation support against — get_queue(present) reliably fails here.
     // Leave these unset for now; resolve the real present queue per-window
     // once a surface exists (e.g. in Swapchain::init, which does have one).
+    // Most desktop GPUs (including NVIDIA) expose one queue family that
+    // handles graphics + present together, so falling back to the graphics
+    // queue/family here is a safe default — and it must be a *valid* queue
+    // either way, since Renderer::endFrame() submits vkQueuePresentKHR to it
+    // unconditionally.
     auto presentQueueRet  = vkbDevice.get_queue(vkb::QueueType::present);
     auto presentFamilyRet = vkbDevice.get_queue_index(vkb::QueueType::present);
-    presentQueue  = presentQueueRet  ? presentQueueRet.value()  : VK_NULL_HANDLE;
+    presentQueue  = presentQueueRet  ? presentQueueRet.value()  : graphicsQueue;
     presentFamily = presentFamilyRet ? presentFamilyRet.value() : graphicsFamily;
 
     // ── VMA ──

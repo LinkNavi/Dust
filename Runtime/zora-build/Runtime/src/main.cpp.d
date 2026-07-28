@@ -3,14 +3,37 @@
   /home/link/Programming/Dust/Runtime/src/main.cpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/DustEngine.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Window.hpp \
-  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan.h \
-  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Swapchain.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Renderer.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/VulkanContext.hpp \
   /home/link/Programming/Dust/Runtime/zora-deps/vk-bootstrap/zora-install/include/VkBootstrap.h \
   /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_core.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vk_platform.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_h264std.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codecs_common.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_h264std_encode.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_h265std.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_h265std_encode.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_h264std_decode.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_h265std_decode.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_av1std.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_av1std_decode.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_av1std_encode.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_vp9std.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vk_video/vulkan_video_codec_vp9std_decode.h \
   /home/link/Programming/Dust/Runtime/zora-deps/vk-bootstrap/zora-install/include/VkBootstrapDispatch.h \
   /home/link/Programming/Dust/Runtime/zora-deps/vk-bootstrap/zora-install/include/VkBootstrapFeatureChain.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/VulkanMemoryAllocator/zora-install/include/vk_mem_alloc.h \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan.h \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Swapchain.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/FrameData.hpp \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan.hpp \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_hpp_macros.hpp \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_enums.hpp \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_to_string.hpp \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_handles.hpp \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_structs.hpp \
+  /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_funcs.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/DefaultShaders.hpp \
   /home/link/Programming/Dust/Runtime/../ECS/include/DustECS.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Systems/Entity.hpp \
-  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/VulkanContext.hpp \
-  /home/link/Programming/Dust/Runtime/zora-deps/VulkanMemoryAllocator/zora-install/include/vk_mem_alloc.h \
   /home/link/Programming/Dust/Runtime/../Engine/include/Log.hpp

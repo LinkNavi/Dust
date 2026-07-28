@@ -4,6 +4,7 @@
 #include "DustECS.hpp"
 #include "Core/Systems/Entity.hpp"
 #include "Core/Rendering/VulkanContext.hpp"
+#include "Core/Rendering/Renderer.hpp"
 #include <functional>
 #include <list>
 
@@ -12,6 +13,7 @@ namespace Dust {
 struct DustEngine {
     WindowManager  windows;
         VulkanContext  vulkan;
+
         ecs::Registry  ecs;
         std::list<Entity> entities;
         Entity         root;

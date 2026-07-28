@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/Rendering/Renderer.hpp"
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -14,6 +15,7 @@ struct Window {
     VkClearValue clearColor = { .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
     // Identity
     const char*  name;
+    Renderer      renderer;
     const char*  title;
     Swapchain swapchain;
     // Display

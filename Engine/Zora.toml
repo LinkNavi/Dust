@@ -7,6 +7,12 @@ type = "staticlib"
 sources = ["src/**/*.cpp"]
 include_dirs = ["include"]
 
+[scripts.BuildShaders]
+path     = "Scripts/BuildShaders.sh"   # required — path relative to that project's root
+args     = ["--flag", "value"]      # optional — default args always passed
+before   = ["build"]                # optional — run before this command/script name
+required = true                     # optional, default true — abort if it fails
+
 [[target.Engine.deps]]
 name = "ECS"
 path = "../ECS"

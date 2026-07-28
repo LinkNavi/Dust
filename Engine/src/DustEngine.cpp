@@ -27,21 +27,17 @@ Entity* DustEngine::createEntity(const char* name, Entity* parent) {
 void DustEngine::shutdown() {
     vkDeviceWaitIdle(vulkan.device);
 
-    // 1. destroy swapchains + image views first
-    for (auto& w : windows.windows)
-        w.swapchain.shutdown(vulkan);
-
-    // 2. destroy surfaces
     for (auto& w : windows.windows) {
+        w.renderer.shutdown(vulkan);      // 1. renderer first
+        w.swapchain.shutdown(vulkan);     // 2. swapchain
         if (w.surface)
-            vkDestroySurfaceKHR(vulkan.instance, w.surface, nullptr);
+            vkDestroySurfaceKHR(vulkan.instance, w.surface, nullptr); // 3. surface
         if (w.handle)
             glfwDestroyWindow(w.handle);
     }
     windows.windows.clear();
 
-    // 3. destroy device + instance last
-    vulkan.shutdown();
+    vulkan.shutdown();                    // 4. device + instance last
     glfwTerminate();
 }
 
