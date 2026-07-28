@@ -29,6 +29,8 @@ int main() {
 
     while (!e.shouldClose()) {
         rotation += e.deltaTime() * 60.0f; // degrees/sec, matches the raylib example's +=1 per frame @60fps
+        cube.vertSlots[2].v.position[1] += e.deltaTime() * 30.0f;
+        cube.updateVertices(e.vulkan); // push the CPU edit above into the GPU buffer
 
         e.beginDrawing();
             e.clearBackground(0.05f, 0.05f, 0.05f);

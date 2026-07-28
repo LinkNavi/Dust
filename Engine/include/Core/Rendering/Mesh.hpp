@@ -54,6 +54,7 @@ struct Mesh {
     VkBuffer     indexBuffer  = VK_NULL_HANDLE;
     VmaAllocation indexAlloc  = VK_NULL_HANDLE;
     uint32_t     indexCount   = 0;
+    uint32_t     uploadedVertCount = 0; // live vert count as of the last upload() — see updateVertices()
     bool         dirty        = true;
 
     // ── Vert ops ──
@@ -73,8 +74,23 @@ struct Mesh {
     void forEachFace(std::function<void(FaceHandle, Face&)>   fn);
 
     // ── GPU ──
-    bool upload(VulkanContext& ctx);   // call after modifying verts/faces
+    bool upload(VulkanContext& ctx);   // call after modifying verts/faces (recreates GPU buffers)
     void destroy(VulkanContext& ctx);
+
+    // Re-copies current vertex positions/attributes into the EXISTING GPU
+    // buffer — no buffer recreation, cheap enough to call every frame for
+    // animated/deforming meshes (direct field edits like
+    // `mesh.vertSlots[i].v.position[...] = ...` don't need setVert/dirty,
+    // just call this afterward). Vertex *count* must match the last
+    // upload() — if you added/removed verts or faces, call upload() instead,
+    // it handles resizing.
+    //
+    // Caveat: this writes straight into the buffer the GPU may still be
+    // reading from a frame still in flight (Renderer double-buffers command
+    // buffers/fences per FrameData, but not per-mesh vertex data) — fine for
+    // iterating on vertex manipulation, but a real animated-mesh path will
+    // eventually want a per-frame-in-flight buffer to close that race.
+    bool updateVertices(VulkanContext& ctx);
 
     // ── Helpers ──
     static Mesh makeTriangle();  // default test mesh

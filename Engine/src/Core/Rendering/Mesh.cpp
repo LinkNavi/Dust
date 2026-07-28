@@ -188,8 +188,34 @@ bool Mesh::upload(VulkanContext& ctx) {
     memcpy(iData, indices.data(), iSize);
     vmaUnmapMemory(ctx.allocator, indexAlloc);
 
-    indexCount = (uint32_t)indices.size();
+    indexCount        = (uint32_t)indices.size();
+    uploadedVertCount = (uint32_t)verts.size();
     dirty = false;
+    return true;
+}
+
+bool Mesh::updateVertices(VulkanContext& ctx) {
+    if (!vertexBuffer) {
+        fprintf(stderr, "dust: updateVertices() called before upload()\n");
+        return false;
+    }
+
+    std::vector<Vertex> verts;
+    for (auto& slot : vertSlots)
+        if (slot.alive) verts.push_back(slot.v);
+
+    if (verts.size() != uploadedVertCount) {
+        fprintf(stderr,
+            "dust: updateVertices() — vertex count changed (%zu vs %u uploaded); "
+            "call upload() instead, it handles resizing the buffer\n",
+            verts.size(), uploadedVertCount);
+        return false;
+    }
+
+    void* data;
+    vmaMapMemory(ctx.allocator, vertAlloc, &data);
+    memcpy(data, verts.data(), verts.size() * sizeof(Vertex));
+    vmaUnmapMemory(ctx.allocator, vertAlloc);
     return true;
 }
 

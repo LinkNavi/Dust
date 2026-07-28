@@ -8,7 +8,7 @@
 #include "/home/link/Programming/Dust/Engine/include/Core/Rendering/ShaderModule.hpp"
 #include "/home/link/Programming/Dust/Engine/include/Core/Rendering/DefaultShaders.hpp"
 #include "/home/link/Programming/Dust/Engine/include/Core/Rendering/PipelineBuilder.hpp"
-#include "/home/link/Programming/Dust/Engine/include/Core/Rendering/Mesh.hpp"
 #include "/home/link/Programming/Dust/Engine/include/Core/Rendering/Camera.hpp"
+#include "/home/link/Programming/Dust/Engine/include/Core/Rendering/Mesh.hpp"
 #include "/home/link/Programming/Dust/Engine/include/Core/Window.hpp"
 #include "/home/link/Programming/Dust/Engine/include/DustEngine.hpp"
