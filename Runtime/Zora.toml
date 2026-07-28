@@ -30,6 +30,12 @@ git  = "https://github.com/charles-lunarg/vk-bootstrap"
 name = "vulkan-headers"
 git  = "https://github.com/KhronosGroup/vulkan-headers"
 
+# DustEngine.hpp -> Core/Rendering/VulkanContext.hpp includes vk_mem_alloc.h,
+# so this needs to be visible to Runtime's own compile too.
+[[target.Runtime.deps]]
+name = "VulkanMemoryAllocator"
+git  = "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator"
+
 [[target.Runtime.deps]]
 system = "glfw3"
 

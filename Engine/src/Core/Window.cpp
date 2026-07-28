@@ -1,10 +1,11 @@
 #include "Core/Window.hpp"
+#include "Core/Rendering/VulkanContext.hpp"
 #include <cstring>
 #include <cstdio>
 
 namespace Dust {
 
-Window& WindowManager::create(const WindowConfig& cfg) {
+Window& WindowManager::create(const WindowConfig& cfg, VulkanContext& ctx) {
     Window w{};
     w.name       = cfg.name;
     w.title      = cfg.title;
@@ -31,21 +32,23 @@ Window& WindowManager::create(const WindowConfig& cfg) {
         return windows.back();
     }
 
-    if (instance != VK_NULL_HANDLE) {
-        if (glfwCreateWindowSurface(instance, w.handle, nullptr, &w.surface) != VK_SUCCESS) {
+    if (ctx.instance != VK_NULL_HANDLE) {
+        if (glfwCreateWindowSurface(ctx.instance, w.handle, nullptr, &w.surface) != VK_SUCCESS) {
             fprintf(stderr, "dust: failed to create Vulkan surface for window '%s'\n", cfg.name);
         }
     }
 
+    w.swapchain.init(ctx, w);
     windows.push_back(w);
     return windows.back();
 }
 
-void WindowManager::destroy(const char* name) {
+
+void WindowManager::destroy(const char* name, VulkanContext& ctx) {
     for (auto it = windows.begin(); it != windows.end(); ++it) {
         if (std::strcmp(it->name, name) == 0) {
-            if (it->surface && instance != VK_NULL_HANDLE)
-                vkDestroySurfaceKHR(instance, it->surface, nullptr);
+            if (it->surface && ctx.instance != VK_NULL_HANDLE)
+                vkDestroySurfaceKHR(ctx.instance, it->surface, nullptr);
             if (it->handle)
                 glfwDestroyWindow(it->handle);
             windows.erase(it);

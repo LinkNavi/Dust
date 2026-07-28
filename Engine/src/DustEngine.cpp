@@ -13,7 +13,6 @@ bool DustEngine::init(const char* appName) {
     if (!vulkan.init(appName, true)) // false in release
         return false;
 
-    windows.instance = vulkan.instance; // surfaces now work
     root = { ecs.create(), "root", &ecs };
     return true;
 }
@@ -26,7 +25,13 @@ Entity* DustEngine::createEntity(const char* name, Entity* parent) {
 }
 
 void DustEngine::shutdown() {
-    // destroy windows first (surfaces before instance)
+    vkDeviceWaitIdle(vulkan.device);
+
+    // 1. destroy swapchains + image views first
+    for (auto& w : windows.windows)
+        w.swapchain.shutdown(vulkan);
+
+    // 2. destroy surfaces
     for (auto& w : windows.windows) {
         if (w.surface)
             vkDestroySurfaceKHR(vulkan.instance, w.surface, nullptr);
@@ -34,6 +39,8 @@ void DustEngine::shutdown() {
             glfwDestroyWindow(w.handle);
     }
     windows.windows.clear();
+
+    // 3. destroy device + instance last
     vulkan.shutdown();
     glfwTerminate();
 }

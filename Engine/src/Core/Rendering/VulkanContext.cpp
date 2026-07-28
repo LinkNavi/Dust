@@ -1,5 +1,5 @@
 #define VMA_IMPLEMENTATION
-#include "VulkanContext.hpp"
+#include "Core/Rendering/VulkanContext.hpp"
 #include <cstdio>
 
 namespace Dust {
@@ -31,7 +31,7 @@ bool VulkanContext::init(const char* appName, bool enableValidation) {
     vkb::PhysicalDeviceSelector selector{ vkbInstance };
     selector.prefer_gpu_device_type(vkb::PreferredDeviceType::discrete)
             .allow_any_gpu_device_type()
-            .require_present();
+            .defer_surface_initialization(); // ← add this, removes the surface requirement
 
     auto physResult = selector.select();
     if (!physResult) {
@@ -91,10 +91,24 @@ bool VulkanContext::init(const char* appName, bool enableValidation) {
     vkbDevice = devResult.value();
     device    = vkbDevice.device;
 
-    graphicsQueue  = vkbDevice.get_queue(vkb::QueueType::graphics).value();
-    presentQueue   = vkbDevice.get_queue(vkb::QueueType::present).value();
-    graphicsFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
-    presentFamily  = vkbDevice.get_queue_index(vkb::QueueType::present).value();
+    auto graphicsQueueRet  = vkbDevice.get_queue(vkb::QueueType::graphics);
+    auto graphicsFamilyRet = vkbDevice.get_queue_index(vkb::QueueType::graphics);
+    if (!graphicsQueueRet || !graphicsFamilyRet) {
+        fprintf(stderr, "dust: no graphics queue available on selected device\n");
+        return false;
+    }
+    graphicsQueue  = graphicsQueueRet.value();
+    graphicsFamily = graphicsFamilyRet.value();
+
+    // No real VkSurfaceKHR exists yet at this point (windows are created
+    // after vulkan.init() returns), so vk-bootstrap has nothing to check
+    // presentation support against — get_queue(present) reliably fails here.
+    // Leave these unset for now; resolve the real present queue per-window
+    // once a surface exists (e.g. in Swapchain::init, which does have one).
+    auto presentQueueRet  = vkbDevice.get_queue(vkb::QueueType::present);
+    auto presentFamilyRet = vkbDevice.get_queue_index(vkb::QueueType::present);
+    presentQueue  = presentQueueRet  ? presentQueueRet.value()  : VK_NULL_HANDLE;
+    presentFamily = presentFamilyRet ? presentFamilyRet.value() : graphicsFamily;
 
     // ── VMA ──
     VmaAllocatorCreateInfo vmaInfo{};
@@ -120,7 +134,7 @@ void VulkanContext::shutdown() {
         vkDestroyDevice(device, nullptr);
         device = VK_NULL_HANDLE;
     }
-    if (enableValidation && debugMessenger)
+    if (validationEnabled && debugMessenger)
         vkb::destroy_debug_utils_messenger(instance, debugMessenger);
     if (instance) {
         vkDestroyInstance(instance, nullptr);

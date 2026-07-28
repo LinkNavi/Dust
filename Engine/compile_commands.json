@@ -13,6 +13,12 @@
   },
   {
     "directory": "/home/link/Programming/Dust/Engine",
+    "file": "/home/link/Programming/Dust/Engine/src/Core/Rendering/Swapchain.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/Swapchain.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/Rendering/Swapchain.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/Swapchain.cpp.o",
+    "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/Swapchain.cpp.o"
+  },
+  {
+    "directory": "/home/link/Programming/Dust/Engine",
     "file": "/home/link/Programming/Dust/Engine/src/Core/Rendering/VulkanContext.cpp",
     "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/VulkanContext.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/Rendering/VulkanContext.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/VulkanContext.cpp.o",
     "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/VulkanContext.cpp.o"
