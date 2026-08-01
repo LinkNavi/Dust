@@ -19,3 +19,10 @@ system = "libsodium"
 
 [[target.DustPacker.deps]]
 system = "libzstd"
+
+# Offline-only — converts any assimp-supported model format (fbx/gltf/dae/
+# stl/ply/3ds/...) into DustModel binary at pack time. Never linked into the
+# shipped Engine/Runtime, so its size/speed doesn't matter for games built
+# with Dust.
+[[target.DustPacker.deps]]
+system = "assimp"

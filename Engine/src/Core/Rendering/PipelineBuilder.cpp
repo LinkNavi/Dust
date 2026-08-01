@@ -122,11 +122,23 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     colorBlend.attachmentCount = 1;
     colorBlend.pAttachments    = &blendAttach;
 
+    // ── Depth/stencil ──
+    // depthWriteEnable follows depthTest — draws that opt out of depth
+    // testing (UI, overlays) shouldn't poke holes in the depth buffer for
+    // whatever draws after them either.
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable  = depthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = depthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp   = VK_COMPARE_OP_LESS;
+
     // ── Dynamic rendering (Vulkan 1.3+) ──
     VkPipelineRenderingCreateInfoKHR renderingInfo{};
     renderingInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
     renderingInfo.colorAttachmentCount    = 1;
     renderingInfo.pColorAttachmentFormats = &swapchain.imageFormat;
+    if (depthTest)
+        renderingInfo.depthAttachmentFormat = swapchain.depthFormat;
 
     // ── Create ──
     VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -139,6 +151,7 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     pipelineInfo.pViewportState      = &viewportState;
     pipelineInfo.pRasterizationState = &raster;
     pipelineInfo.pMultisampleState   = &msaa;
+    pipelineInfo.pDepthStencilState  = &depthStencil;
     pipelineInfo.pColorBlendState    = &colorBlend;
     pipelineInfo.pDynamicState       = &dynamicState;
     pipelineInfo.layout              = outLayout;

@@ -149,6 +149,8 @@ static VkBuffer createBuffer(VulkanContext& ctx, VkDeviceSize size,
 }
 
 bool Mesh::upload(VulkanContext& ctx) {
+    ownerCtx = &ctx; // updateVertices()/destroy() reuse this from here on
+
     // Collect live verts + build index remapping
     std::vector<Vertex>   verts;
     std::vector<uint32_t> remap(vertSlots.size(), UINT32_MAX);
@@ -194,8 +196,8 @@ bool Mesh::upload(VulkanContext& ctx) {
     return true;
 }
 
-bool Mesh::updateVertices(VulkanContext& ctx) {
-    if (!vertexBuffer) {
+bool Mesh::updateVertices() {
+    if (!vertexBuffer || !ownerCtx) {
         fprintf(stderr, "dust: updateVertices() called before upload()\n");
         return false;
     }
@@ -213,15 +215,17 @@ bool Mesh::updateVertices(VulkanContext& ctx) {
     }
 
     void* data;
-    vmaMapMemory(ctx.allocator, vertAlloc, &data);
+    vmaMapMemory(ownerCtx->allocator, vertAlloc, &data);
     memcpy(data, verts.data(), verts.size() * sizeof(Vertex));
-    vmaUnmapMemory(ctx.allocator, vertAlloc);
+    vmaUnmapMemory(ownerCtx->allocator, vertAlloc);
     return true;
 }
 
-void Mesh::destroy(VulkanContext& ctx) {
-    if (vertexBuffer) { vmaDestroyBuffer(ctx.allocator, vertexBuffer, vertAlloc); vertexBuffer = VK_NULL_HANDLE; }
-    if (indexBuffer)  { vmaDestroyBuffer(ctx.allocator, indexBuffer,  indexAlloc); indexBuffer  = VK_NULL_HANDLE; }
+void Mesh::destroy() {
+    if (!ownerCtx) return; // never uploaded — nothing to free
+    if (vertexBuffer) { vmaDestroyBuffer(ownerCtx->allocator, vertexBuffer, vertAlloc); vertexBuffer = VK_NULL_HANDLE; }
+    if (indexBuffer)  { vmaDestroyBuffer(ownerCtx->allocator, indexBuffer,  indexAlloc); indexBuffer  = VK_NULL_HANDLE; }
+    ownerCtx = nullptr;
 }
 
 // ─── HELPERS ──────────────────────────────────
@@ -254,6 +258,17 @@ Mesh Mesh::makeCube() {
     m.addFace(v3,v2,v6); m.addFace(v3,v6,v7); // top
     m.addFace(v0,v4,v5); m.addFace(v0,v5,v1); // bottom
     m.recalcNormals();
+    return m;
+}
+
+Mesh Mesh::makeQuad() {
+    Mesh m;
+    auto a = m.addVert({{0,0,0}, {0,0,1}, {0,0}, {1,1,1,1}});
+    auto b = m.addVert({{1,0,0}, {0,0,1}, {1,0}, {1,1,1,1}});
+    auto c = m.addVert({{1,1,0}, {0,0,1}, {1,1}, {1,1,1,1}});
+    auto d = m.addVert({{0,1,0}, {0,0,1}, {0,1}, {1,1,1,1}});
+    m.addFace(a, b, c);
+    m.addFace(a, c, d);
     return m;
 }
 

@@ -3,6 +3,7 @@
 
 layout(push_constant) uniform Push {
     mat4 transform;
+    vec4 baseColorFactor; // unused here — read by default.frag, shared block so offsets line up
 } push;
 
 layout(location=0) in vec3 inPosition;

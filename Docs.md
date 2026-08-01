@@ -171,13 +171,50 @@ m.upload(e.vulkan);
 // Modify at runtime
 Dust::Vertex* v = m.getVert(a);
 v->position[1] += 0.1f;
-m.upload(e.vulkan); // re-upload after changes
+m.upload(e.vulkan); // re-upload after changes — recreates the GPU buffers
 
-// Draw
-w.renderer.draw(w.renderer.cmd(), m, w.renderer.defaultPipeline, w.renderer.defaultLayout);
+// Cheaper per-frame path once vert *count* is stable (deforming/animated
+// meshes) — no VulkanContext to pass, upload() already stashed it on m.
+v->position[1] += sinf(t) * 0.1f;
+m.updateVertices();
+
+// Draw — raw Mesh, no materials, samples the engine's white fallback texture
+e.drawMesh(m, /*position*/{0,0,0}, /*rotationAxis*/{0,1,0}, /*rotationDeg*/0.0f);
+
+// Cleanup — no VulkanContext needed, same reason as updateVertices()
+m.destroy();
+```
+
+---
+
+## Models
+
+`Model` is the one type behind `loadModel()`/`loadModelFromPack()` — a plain
+`.obj` produces a single submesh with no material; anything DustPacker ran
+through assimp (fbx/gltf/glb/dae/stl/ply/3ds/...) produces real
+materials/textures. Distinct from the raw `Mesh` API above: a `Model` is
+always loaded from an asset, a `Mesh` is something you can build by hand.
+
+```cpp
+#include "Core/Rendering/Model.hpp"
+
+// Direct file — always OBJ (the only format Dust parses outside of
+// DustPacker's offline assimp step).
+Dust::Model cube = e.loadModel("cube.obj");
+
+// From a pack — dispatches on extension. DustPacker renames every non-.obj
+// source format to ".model" automatically when it packs it.
+Dust::Model duck = e.loadModelFromPack(assets, "Duck.model");
+
+// Vert-edit the common single-submesh case exactly like a raw Mesh
+duck.mesh().vertSlots[0].v.position[1] += 0.1f;
+duck.mesh().updateVertices();
+
+// Draw — iterates every submesh, binding each one's material/texture
+e.drawModel(duck, /*position*/{0,0,0}, /*rotationAxis*/{0,1,0}, /*rotationDeg*/0.0f);
 
 // Cleanup
-m.destroy(e.vulkan);
+e.unloadModel(duck);
 ```
 
 ---

@@ -2,6 +2,7 @@
 
 #include <VkBootstrap.h>
 #include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 #include <vector>
 #include <cstdint>
 
@@ -23,6 +24,15 @@ struct Swapchain {
     VkRenderPass             renderPass   = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers;
 
+    // Depth buffer — one image shared by every frame (not per-frame-in-
+    // flight; depth content never needs to survive past its own frame, so
+    // there's no read-after-write hazard across frames to guard against).
+    // Resized alongside the swapchain in init()/rebuild().
+    VkImage       depthImage     = VK_NULL_HANDLE;
+    VmaAllocation depthAlloc     = VK_NULL_HANDLE;
+    VkImageView   depthImageView = VK_NULL_HANDLE;
+    VkFormat      depthFormat    = VK_FORMAT_UNDEFINED;
+
     vkb::Swapchain           vkbSwapchain;
 
     bool useDynamicRendering = false;
@@ -39,6 +49,9 @@ private:
     bool createFramebuffers(VkDevice device);
     void destroyImageViews(VkDevice device);
     void destroyFramebuffers(VkDevice device);
+
+    bool createDepthResources(VulkanContext& ctx);
+    void destroyDepthResources(VulkanContext& ctx);
 };
 
 } // namespace Dust

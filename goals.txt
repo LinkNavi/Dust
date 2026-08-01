@@ -13,6 +13,7 @@ Renderer Core {
     Basic custom shaders (vert/frag loading) [DONE]
     Camera [DONE]
     OBJ model loading [DONE]
+    Depth buffer [DONE]
     fast asf
     Not style locked
 }
@@ -28,7 +29,8 @@ Entity System {
 }
 
 Good Rendering {
-    Full model loading via assimp
+    Full model loading via assimp [DONE] (offline, in DustPacker — fbx/gltf/glb/dae/stl/ply/3ds -> one binary format, multi-submesh + materials + textures)
+    Texture + material support (base color) [DONE] — normal/metallic-roughness/emissive/occlusion maps are imported+uploaded but unused until there's a lit shader
     Add a way to edit layers (hud layer, overlay layer, world layer, hand layer, etc)
     Dynamic textures (per face textures)
     Fog

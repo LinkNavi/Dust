@@ -57,6 +57,12 @@ struct Mesh {
     uint32_t     uploadedVertCount = 0; // live vert count as of the last upload() — see updateVertices()
     bool         dirty        = true;
 
+    // Stashed by upload() — updateVertices()/destroy() reuse it so callers
+    // don't have to keep re-threading VulkanContext through every frame just
+    // to poke vertex data. upload() is the one place a context has to come
+    // from somewhere; everything downstream of it shouldn't need it again.
+    VulkanContext* ownerCtx = nullptr;
+
     // ── Vert ops ──
     VertHandle addVert(const Vertex& v);
     void       removeVert(VertHandle h);
@@ -74,8 +80,10 @@ struct Mesh {
     void forEachFace(std::function<void(FaceHandle, Face&)>   fn);
 
     // ── GPU ──
+    // The one call that needs a VulkanContext explicitly — everything else
+    // below reuses the context stashed here (see ownerCtx above).
     bool upload(VulkanContext& ctx);   // call after modifying verts/faces (recreates GPU buffers)
-    void destroy(VulkanContext& ctx);
+    void destroy();
 
     // Re-copies current vertex positions/attributes into the EXISTING GPU
     // buffer — no buffer recreation, cheap enough to call every frame for
@@ -90,11 +98,16 @@ struct Mesh {
     // buffers/fences per FrameData, but not per-mesh vertex data) — fine for
     // iterating on vertex manipulation, but a real animated-mesh path will
     // eventually want a per-frame-in-flight buffer to close that race.
-    bool updateVertices(VulkanContext& ctx);
+    bool updateVertices();
 
     // ── Helpers ──
     static Mesh makeTriangle();  // default test mesh
     static Mesh makeCube();
+
+    // Unit quad, corners at (0,0) and (1,1) in the XY plane — position.xy
+    // doubles as a 0..1 local UV. Used by DustUI's screen-space widget
+    // rendering (Core/UI/), but generic enough for anything else 2D.
+    static Mesh makeQuad();
 
     // Basic Wavefront OBJ loader — v/vt/vn/f, fan-triangulates n-gons,
     // dedupes shared v/vt/vn corners. No materials/groups yet — vertex color

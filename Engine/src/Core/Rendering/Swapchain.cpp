@@ -48,6 +48,8 @@ bool Swapchain::init(VulkanContext& ctx, Window& window) {
         if (!createFramebuffers(ctx.device)) return false;
     }
 
+    if (!createDepthResources(ctx)) return false;
+
     return true;
 }
 
@@ -60,6 +62,7 @@ void Swapchain::rebuild(VulkanContext& ctx, Window& window) {
 void Swapchain::shutdown(VulkanContext& ctx) {
     VkDevice dev = ctx.device;
 
+    destroyDepthResources(ctx);
     destroyFramebuffers(dev);
     destroyImageViews(dev);
 
@@ -155,6 +158,85 @@ void Swapchain::destroyFramebuffers(VkDevice device) {
     for (auto fb : framebuffers)
         vkDestroyFramebuffer(device, fb, nullptr);
     framebuffers.clear();
+}
+
+// ─── DEPTH BUFFER ─────────────────────────────
+
+namespace {
+VkFormat pickDepthFormat(VkPhysicalDevice physicalDevice) {
+    // D32_SFLOAT is supported on essentially every Vulkan device (desktop and
+    // mobile alike); the S8 variants are fallbacks for the rare device that
+    // doesn't expose it. No stencil ops are used, so a stencil-less format is
+    // preferred when available (smaller, one less thing to think about).
+    static const VkFormat candidates[] = {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
+    };
+    for (VkFormat fmt : candidates) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(physicalDevice, fmt, &props);
+        if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+            return fmt;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+}
+
+bool Swapchain::createDepthResources(VulkanContext& ctx) {
+    depthFormat = pickDepthFormat(ctx.physicalDevice);
+    if (depthFormat == VK_FORMAT_UNDEFINED) {
+        fprintf(stderr, "dust: no supported depth format found\n");
+        return false;
+    }
+
+    VkImageCreateInfo imgInfo{};
+    imgInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imgInfo.imageType     = VK_IMAGE_TYPE_2D;
+    imgInfo.format        = depthFormat;
+    imgInfo.extent        = { extent.width, extent.height, 1 };
+    imgInfo.mipLevels     = 1;
+    imgInfo.arrayLayers   = 1;
+    imgInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+    imgInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+    imgInfo.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imgInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+    imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    if (vmaCreateImage(ctx.allocator, &imgInfo, &allocInfo, &depthImage, &depthAlloc, nullptr) != VK_SUCCESS) {
+        fprintf(stderr, "dust: failed to create depth image\n");
+        return false;
+    }
+
+    bool hasStencil = depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+                       depthFormat == VK_FORMAT_D24_UNORM_S8_UINT;
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image                           = depthImage;
+    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format                          = depthFormat;
+    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT |
+                                                (hasStencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+    viewInfo.subresourceRange.baseMipLevel   = 0;
+    viewInfo.subresourceRange.levelCount     = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount     = 1;
+
+    if (vkCreateImageView(ctx.device, &viewInfo, nullptr, &depthImageView) != VK_SUCCESS) {
+        fprintf(stderr, "dust: failed to create depth image view\n");
+        return false;
+    }
+
+    return true;
+}
+
+void Swapchain::destroyDepthResources(VulkanContext& ctx) {
+    if (depthImageView) { vkDestroyImageView(ctx.device, depthImageView, nullptr); depthImageView = VK_NULL_HANDLE; }
+    if (depthImage)     { vmaDestroyImage(ctx.allocator, depthImage, depthAlloc);  depthImage     = VK_NULL_HANDLE; depthAlloc = VK_NULL_HANDLE; }
 }
 
 } // namespace Dust

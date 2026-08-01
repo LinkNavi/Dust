@@ -26,6 +26,7 @@
   /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan.h \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Swapchain.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Mesh.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Texture.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/FrameData.hpp \
   /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan.hpp \
   /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_hpp_macros.hpp \
@@ -35,9 +36,11 @@
   /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_structs.hpp \
   /home/link/Programming/Dust/Runtime/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_funcs.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/DefaultShaders.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/UIShaders.hpp \
   /home/link/Programming/Dust/Runtime/../ECS/include/DustECS.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Systems/Entity.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Camera.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Model.hpp \
   /home/link/Programming/Dust/Runtime/../AssetManager/include/AssetManager/AssetManager.hpp \
   /home/link/Programming/Dust/Runtime/../AssetManager/include/AssetManager/PackFormat.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Log.hpp

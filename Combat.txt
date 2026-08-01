@@ -1,0 +1,47 @@
+How should I redesign the combat, I wanted it to be like a dark souls but  also kinda like a fighting game.
+
+so basically bosses have a set of attacks per phase and use a weighing system to decide how to string attack based on what the player got hit by.
+
+attacks are either high, low, left, right or unblockable
+
+for highs you hold the block button (most likely right click) and move ur mouse up, the other directions are self explanitory, there also variants (diagnols) that can be blocked in either direction (for example left or up) but its more of a mix up and come quicker. camera gets locked as you hold the block button to activate blocking
+
+for unblockables, they have a overly unique animation (like a big charge up or a wide swing) and can only be used at either at the start or end of strings. they can either be parryied or dodged. sometimes you only have one option depending on moves (for example you cant parry a grab you have to dodge it)
+
+i think this could be cool cus then cpus could mix things like feints and shit
+
+then weighing system comes into play by trying to "read" the player, simular to how fighing game cpus work
+
+in order to balance this for a player there is 3 ways to make it (your turn)
+
+wait till bosses or enemy's string is over
+
+parry an attack (it's easier to parry a telegraphed unblockable, but ofc im not gonna punish the player for reading a string and just parrying it)
+
+or interupt the enemy's or boss's attack
+
+In order to parry you press left click as an attack come while you block it correctly, if you fuck it up ur stun gague gets way more meter
+
+The player's turn:
+
+obviously theres classes so no play style is gonna be the exact same so heres the basics
+
+once you hit the opponent normally (no stunning or anything) theyll reset to neutral, giving the player an oppertunity to do their bullshit.
+
+for fighting types its obvious you just attack or go back and forth until either of you get hit or you stun them by doing enough damage in one attack
+
+the stun stage is like a free combo in this although there is no combos although i do wanna find a way to kinda inplement them?
+
+you just get a certian ammount of time to just beat the shit out of the enemy or boss. most enemys this is just death obviously not for bosses
+
+for ranged classes like mages and bow builds ur most likey gonna back up and zone using quick spells and arrows, honestly im now sure how to make these not just a "run away and fire untill they die" fight
+
+Like maybe ill give the bosses a lunge move that closes distance if you dont do shit but run, and to prevent that i could add traps so that when bossed try to approach they either dodge back wards, creating space or just walk through the trap, either doing damage or slowing them down
+
+magic is likely the most busted class if you know how to use it,  like you script ur own spells. each function (for example fireball or firewall) would cost a certain ammount of mana, total spell damage rate is evenly spread out among all functions unless an advanced user mannually sets it, although certain high damage spells have a cap on damage based on item or level idk which yet.
+
+actually casting the spells start in two phases: the minimal charge and the overcharge. post usaage
+
+the minimal charge is just buffer time to balance the magic, the more functions in the spell the longer the minimal cast time is. the minimal mana drain is also scaled by func use. overcharge is just a way to add more juice into spells, longer you charge it the more damage you add allowing you to put littlerally all of ur mana into one spell. the time to add damage is also scaled by the ammount of funcs. Post usage is the cooldown period, you can no longer use that spell slot based on both how many funcs it used and how much over charge you put into it, grimoires have a total of three, paired with a staff you get 5. (swordmage vs pure mage)
+
+how would you balence this or make it more fun, make sure to consider the pvp aspect

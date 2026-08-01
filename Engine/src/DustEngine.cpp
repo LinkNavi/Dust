@@ -2,8 +2,16 @@
 #include "DustEngine.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <cstdio>
+#include <cstring>
 
 namespace Dust {
+
+namespace {
+bool hasSuffix(const std::string& s, const char* suffix) {
+    size_t n = strlen(suffix);
+    return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
+}
+}
 
 bool DustEngine::init(const char* title, uint32_t width, uint32_t height, bool createWindow) {
     if (!glfwInit()) {
@@ -120,6 +128,27 @@ void DustEngine::endMode3D() {
     // No-op for now — kept for symmetry with beginMode3D and raylib parity.
 }
 
+void DustEngine::drawMesh(Mesh& mesh, glm::vec3 position, glm::vec3 rotationAxis,
+                          float rotationDeg, glm::vec3 scale) {
+    if (!frameValid || !window) return;
+    if (!renderingBegun) {
+        auto& c = window->clearColor.color.float32;
+        clearBackground(c[0], c[1], c[2]);
+    }
+
+    glm::mat4 t = glm::translate(glm::mat4(1.0f), position);
+    if (glm::length(rotationAxis) > 0.0001f)
+        t = glm::rotate(t, glm::radians(rotationDeg), glm::normalize(rotationAxis));
+    t = glm::scale(t, scale);
+
+    glm::mat4 mvp = activeViewProj * t;
+    window->renderer.draw(window->renderer.cmd(), mesh,
+                          window->renderer.defaultPipeline,
+                          window->renderer.defaultLayout,
+                          &mvp[0][0],
+                          window->renderer.defaultMaterialSet); // untextured — samples the 1x1 white fallback
+}
+
 void DustEngine::drawModel(Model& model, glm::vec3 position, glm::vec3 rotationAxis,
                            float rotationDeg, glm::vec3 scale) {
     if (!frameValid || !window) return;
@@ -133,36 +162,59 @@ void DustEngine::drawModel(Model& model, glm::vec3 position, glm::vec3 rotationA
         t = glm::rotate(t, glm::radians(rotationDeg), glm::normalize(rotationAxis));
     t = glm::scale(t, scale);
 
-    glm::mat4 mvp = activeViewProj * t;
-    window->renderer.draw(window->renderer.cmd(), model,
-                          window->renderer.defaultPipeline,
-                          window->renderer.defaultLayout,
-                          &mvp[0][0]);
+    for (auto& sm : model.submeshes) {
+        glm::mat4 mvp = activeViewProj * t * sm.transform;
+
+        const Material* mat = (sm.materialIndex >= 0 && (size_t)sm.materialIndex < model.materials.size())
+                             ? &model.materials[sm.materialIndex] : nullptr;
+        VkDescriptorSet materialSet = mat ? mat->materialSet : window->renderer.defaultMaterialSet;
+        const float*     baseColor  = mat ? mat->baseColor : nullptr;
+
+        window->renderer.draw(window->renderer.cmd(), sm.mesh,
+                              window->renderer.defaultPipeline,
+                              window->renderer.defaultLayout,
+                              &mvp[0][0], materialSet, baseColor);
+    }
 }
 
 Model DustEngine::loadModel(const char* objPath) {
-    Model m = Mesh::loadOBJ(objPath);
+    Mesh m = Mesh::loadOBJ(objPath);
     m.upload(vulkan);
-    return m;
+    return wrapMesh(std::move(m));
 }
 
 Model DustEngine::loadModelFromPack(AssetManager& assets, const std::string& name) {
-    Model m;
     AssetHandle h = assets.load(name);
     if (!valid(h)) {
         fprintf(stderr, "dust: '%s' not found in pack\n", name.c_str());
-        return m;
+        return Model{};
     }
     const std::vector<uint8_t>* bytes = assets.data(h);
-    m = Mesh::loadOBJFromMemory(bytes->data(), bytes->size());
-    assets.release(h); // GPU upload below copies it off
-    m.upload(vulkan);
+
+    if (hasSuffix(name, ".obj")) {
+        Mesh mesh = Mesh::loadOBJFromMemory(bytes->data(), bytes->size());
+        assets.release(h); // GPU upload below copies it off
+        mesh.upload(vulkan);
+        return wrapMesh(std::move(mesh));
+    }
+
+    // Anything else is expected to be a DustModel binary — the format
+    // DustPacker's assimp importer normalizes every other supported source
+    // format into (see AssetManager/ModelFormat.hpp).
+    if (!window) {
+        fprintf(stderr, "dust: loadModelFromPack() needs a window (material descriptor sets belong to its renderer)\n");
+        assets.release(h);
+        return Model{};
+    }
+    Model m = loadModelFromMemory(vulkan, window->renderer, bytes->data(), bytes->size());
+    assets.release(h);
     return m;
 }
 
 void DustEngine::unloadModel(Model& model) {
+    if (!window) return;
     vkDeviceWaitIdle(vulkan.device);
-    model.destroy(vulkan);
+    model.destroy(vulkan, window->renderer);
 }
 
 } // namespace Dust

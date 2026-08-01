@@ -7,6 +7,8 @@
 #include "Core/Rendering/Renderer.hpp"
 #include "Core/Rendering/Camera.hpp"
 #include "Core/Rendering/Mesh.hpp"
+#include "Core/Rendering/Model.hpp"
+#include "Core/UI/Widget.hpp"
 #include "AssetManager/AssetManager.hpp"
 #include <functional>
 #include <list>
@@ -14,9 +16,6 @@
 #include <glm/glm.hpp>
 
 namespace Dust {
-
-// A Model is just a Mesh — friendlier name for the raylib-shaped API below.
-using Model = Mesh;
 
 struct DustEngine {
     WindowManager  windows;
@@ -60,18 +59,25 @@ struct DustEngine {
     void endDrawing();
     void clearBackground(float r, float g, float b);
 
-    // Sets the camera used by drawModel() calls made until endMode3D().
+    // Sets the camera used by drawModel()/drawMesh() calls made until endMode3D().
     void beginMode3D(const Camera& camera);
     void endMode3D();
 
+    // ── Model — loaded assets (OBJ or anything DustPacker ran through
+    // assimp: fbx/gltf/glb/dae/stl/ply/3ds/...). One submesh/no material for
+    // a plain OBJ, real materials+textures for anything imported — same
+    // three calls either way.
+    //
     // position/rotationAxis in world units, rotationDeg in degrees — mirrors
     // raylib's DrawModelEx(model, position, rotationAxis, rotationAngle, scale, tint).
-    // No tint yet (no per-draw color multiply in the shader), and no depth
-    // buffer yet, so overlapping models don't sort — fine for one model.
+    // No tint yet (no per-draw color multiply in the shader).
     void drawModel(Model& model, glm::vec3 position, glm::vec3 rotationAxis,
                    float rotationDeg, glm::vec3 scale = { 1.0f, 1.0f, 1.0f });
 
-    // Loads + uploads in one call.
+    // Loads + uploads in one call. Dispatches on file extension: ".obj" goes
+    // through the plain-text loader (wrapped as a single-submesh, no-material
+    // Model); anything else is expected to be a DustModel binary produced by
+    // DustPacker's assimp importer (packed under "<name>.model").
     Model loadModel(const char* objPath);
     Model loadModelFromPack(AssetManager& assets, const std::string& name);
 
@@ -79,10 +85,40 @@ struct DustEngine {
     // shutdown() for anything returned by loadModel()/loadModelFromPack().
     void unloadModel(Model& model);
 
+    // ── Mesh — raw, procedural, vert-editable geometry (Mesh::makeTriangle(),
+    // addVert/addFace, ...). No file loading, no materials — just a mesh and
+    // a transform, drawn with the engine's 1x1 white fallback texture so
+    // vertex color comes through unmodified. Mesh itself owns its GPU
+    // lifecycle (mesh.upload(vulkan) / mesh.updateVertices() / mesh.destroy()
+    // — see Mesh.hpp), drawMesh() just issues the draw call.
+    void drawMesh(Mesh& mesh, glm::vec3 position, glm::vec3 rotationAxis,
+                 float rotationDeg, glm::vec3 scale = { 1.0f, 1.0f, 1.0f });
+
+    // ── DustUI — see DustUI-API.md for the target API, UITimeline.md for
+    // what's built so far (Phase 1: layout + solid rounded-rect/border
+    // fills; no text/sprites/custom shaders yet).
+    //
+    // beginUI() resets and returns the invisible full-viewport root widget —
+    // attach top-level widgets to it with .child(...). DustUI-API.md shows
+    // bare top-level widget statements registering themselves implicitly;
+    // there's no standard-C++ way to hook that (see UITimeline.md), so this
+    // is the one deviation from the doc:
+    //
+    //   auto& ui = e.beginUI();
+    //   ui.child(UI::Column().anchor(...)...);
+    //   ui.child(UI::Widget().anchor(...)...);
+    //   e.endUI();
+    //
+    // Immediate mode — the whole tree is rebuilt and redrawn every frame,
+    // no diffing yet (Phase 5). Draws after 3D content, always on top.
+    UI::Widget& beginUI();
+    void        endUI();
+
 private:
-    glm::mat4 activeViewProj{ 1.0f };
-    bool      frameValid     = false; // false on a skipped (swapchain-rebuild) frame
-    bool      renderingBegun = false; // whether beginRendering() has run this frame
+    glm::mat4  activeViewProj{ 1.0f };
+    bool       frameValid     = false; // false on a skipped (swapchain-rebuild) frame
+    bool       renderingBegun = false; // whether beginRendering() has run this frame
+    UI::Widget uiRoot;
 };
 
 } // namespace Dust
