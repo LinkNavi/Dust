@@ -1,0 +1,8 @@
+GPU Based Entity Calculations???{
+popped up in my head but honestly idk how this would work, i was thinking maybe with scripting i could pass off funcs (think raycast bounding box etc) over to the gpu instead of having the cpu do everything
+
+concerns:
+idk glsl all that well
+if it would be worth it
+no real documentation
+}

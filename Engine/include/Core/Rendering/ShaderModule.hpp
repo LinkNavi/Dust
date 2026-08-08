@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vulkan/vulkan_core.h"
 #include <vulkan/vulkan.h>
 #include <string_view>
 
@@ -8,6 +9,7 @@ namespace Dust {
 struct ShaderModule {
     VkShaderModule vert = VK_NULL_HANDLE;
     VkShaderModule frag = VK_NULL_HANDLE;
+    VkShaderModule comp = VK_NULL_HANDLE;
 
     // Load from SPIR-V files
     static ShaderModule load(VkDevice device,

@@ -10,10 +10,19 @@
 #include "Core/UI/Font.hpp"
 #include <array>
 #include <vector>
+#include <glm/glm.hpp>
 
 namespace Dust {
 
 struct Window;
+class ParticleSystem;
+
+// Push constants layout matching particle.vert
+struct ParticlePushConstants {
+    glm::mat4 viewProj;
+    glm::vec4 camRight; // xyz used
+    glm::vec4 camUp;    // xyz used
+};
 
 struct Renderer {
     std::array<FrameData, FRAMES_IN_FLIGHT> frames;
@@ -28,9 +37,9 @@ struct Renderer {
     // by createMaterialSet() below — defaultPipeline and every Model
     // material both draw from this same pool.
     VkDescriptorSetLayout materialSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool       materialPool      = VK_NULL_HANDLE;
-    Texture                defaultWhiteTexture;   // "no texture bound" fallback
-    VkDescriptorSet         defaultMaterialSet = VK_NULL_HANDLE;
+    VkDescriptorPool      materialPool      = VK_NULL_HANDLE;
+    Texture               defaultWhiteTexture;   // "no texture bound" fallback
+    VkDescriptorSet       defaultMaterialSet = VK_NULL_HANDLE;
 
     // Allocates+writes a one-texture material descriptor set from materialPool.
     // Caller owns the returned handle's lifetime via vkFreeDescriptorSets
@@ -78,8 +87,21 @@ struct Renderer {
                            VkExtent2D screenSize,
                            float outlineWidthPx = 0.0f, Color outlineColor = Colors::Transparent);
 
+    // ── Particles ── procedurally generated billboard quads instanced
+    // per particle — see Shaders/particle.vert/frag and ParticleSystem.hpp.
+    VkPipelineLayout particleLayout   = VK_NULL_HANDLE;
+    VkPipeline       particlePipeline = VK_NULL_HANDLE;
+
+    // Submits a particle draw pass using camera vectors and optional material texture
+    void drawParticles(VkCommandBuffer cmd,
+                       ParticleSystem& particleSystem,
+                       const glm::mat4& viewProj,
+                       const glm::vec3& camRight,
+                       const glm::vec3& camUp,
+                       VkDescriptorSet materialSet = VK_NULL_HANDLE);
+
     std::vector<VkSemaphore> renderFinishedSemaphores;
-VkExtent2D currentExtent = {};
+    VkExtent2D currentExtent = {};
     vkb::DispatchTable dispatch;
     void draw(VkCommandBuffer cmd, Mesh& mesh,
               VkPipeline pipeline, VkPipelineLayout layout,

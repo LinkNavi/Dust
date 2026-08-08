@@ -1,0 +1,46 @@
+// particles.comp — one invocation per particle. Reads+writes the same
+// buffer the graphics pipeline later binds as instance data (see
+// particle.vert) — the result never touches the CPU. Layout must match
+// Dust::Particle in Core/Rendering/Particles.hpp exactly (std430).
+#version 450
+
+struct Particle {
+    vec3  position;
+    float life;      // seconds remaining; <= 0 = dead (skipped, not drawn)
+    vec3  velocity;
+    float size;
+    vec4  color;
+};
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(push_constant) uniform Push {
+    float dt;
+    float gravityY;
+    float drag;
+    uint  particleCount;
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.particleCount) return;
+
+    Particle p = particles[i];
+    if (p.life <= 0.0) return; // dead slot — spawn() revives it, not us
+
+    p.velocity.y += pc.gravityY * pc.dt;
+    p.velocity   *= max(0.0, 1.0 - pc.drag * pc.dt);
+    p.position   += p.velocity * pc.dt;
+    p.life       -= pc.dt;
+
+    // fade out over the last second of life — free visual polish, zero
+    // extra CPU work, this is the kind of thing that's basically free once
+    // you're already touching every particle in parallel anyway.
+    p.color.a = clamp(p.life, 0.0, 1.0);
+
+    particles[i] = p;
+}
