@@ -38,3 +38,32 @@ system = "glfw3"
 
 [[target.Engine.deps]]
 system = "vulkan"
+
+[[target.Engine.deps]]
+name = "msdfgen"
+git  = "https://github.com/Chlumsky/msdfgen"
+# msdfgen ships both a CMakeLists.txt and top-level headers, so Zora's
+# auto-detect can't tell build-vs-header-only apart and falls back to an
+# interactive prompt. Force it explicitly so a fresh clone never blocks on
+# stdin waiting for a "b/h" answer.
+header_only = false
+# msdfgen defaults to vcpkg for its own deps (freetype/png/tinyxml2/skia) and
+# fails to configure without a working VCPKG_ROOT. Everything it needs for
+# font-atlas generation (freetype for glyph outlines, libpng for atlas I/O)
+# is already available system-wide, so point it at plain find_package()
+# instead — no vcpkg required.
+#   USE_SKIA=OFF      — skia's only used for optional geometry preprocessing;
+#                        it isn't vcpkg-able here and there's no system pkg.
+#   DISABLE_SVG=ON     — SVG shape import needs tinyxml2, which isn't
+#                        installed and isn't something a font atlas needs.
+#   BUILD_STANDALONE=OFF — the msdfgen CLI tool; Engine only needs the libs.
+#   INSTALL=ON          — off by default upstream, which means Zora's
+#                        `cmake --install` step would silently install
+#                        nothing (no install() rules registered at all).
+build_args = [
+    "-DMSDFGEN_USE_VCPKG=OFF",
+    "-DMSDFGEN_USE_SKIA=OFF",
+    "-DMSDFGEN_DISABLE_SVG=ON",
+    "-DMSDFGEN_BUILD_STANDALONE=OFF",
+    "-DMSDFGEN_INSTALL=ON",
+]

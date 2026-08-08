@@ -7,6 +7,7 @@
 #include "Core/Rendering/FrameData.hpp"
 #include "Core/Rendering/DefaultShaders.hpp"
 #include "Core/UI/UIShaders.hpp"
+#include "Core/UI/Font.hpp"
 #include <array>
 #include <vector>
 
@@ -52,6 +53,30 @@ struct Renderer {
                     float borderWidthPx, float borderRadiusPx,
                     const float fillColor[4], const float borderColor[4],
                     float opacity, VkExtent2D screenSize);
+
+    // ── Text (MSDF) ── same shared unit quad as DustUI rects, instanced
+    // once per glyph — see Shaders/text.vert/frag and Core/UI/Font.hpp.
+    VkPipelineLayout textLayout   = VK_NULL_HANDLE;
+    VkPipeline       textPipeline = VK_NULL_HANDLE;
+
+    // Single CPU-mapped buffer, rewritten from offset 0 on every call — fine
+    // as long as callers don't need two in-flight text draws to coexist
+    // within the same frame without one overwriting the other's data before
+    // the GPU reads it (same caveat Mesh::updateVertices() documents for the
+    // same reason: no per-frame-in-flight duplication yet). One draw call
+    // per Font per frame, which is all DustUI needs today.
+    static constexpr uint32_t kTextInstanceCapacity = 8192;
+    VkBuffer      textInstanceBuffer = VK_NULL_HANDLE;
+    VmaAllocation textInstanceAlloc  = VK_NULL_HANDLE;
+    void*         textInstanceMapped = nullptr; // persistently mapped, see Renderer::init
+
+    // Uploads `instances` into the shared instance buffer and issues one
+    // instanced draw call against `font`'s atlas. outlineWidthPx=0 (default)
+    // disables the outline entirely at no extra cost — see text.frag.
+    void drawTextInstances(VkCommandBuffer cmd, const UI::Font& font,
+                           const std::vector<UI::GlyphInstance>& instances,
+                           VkExtent2D screenSize,
+                           float outlineWidthPx = 0.0f, Color outlineColor = Colors::Transparent);
 
     std::vector<VkSemaphore> renderFinishedSemaphores;
 VkExtent2D currentExtent = {};

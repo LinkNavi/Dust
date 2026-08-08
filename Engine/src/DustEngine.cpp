@@ -45,6 +45,8 @@ Entity* DustEngine::createEntity(const char* name, Entity* parent) {
 void DustEngine::shutdown() {
     vkDeviceWaitIdle(vulkan.device);
 
+    unloadUIFont();
+
     for (auto& w : windows.windows) {
         w.renderer.shutdown(vulkan);      // 1. renderer first
         w.swapchain.shutdown(vulkan);     // 2. swapchain
@@ -215,6 +217,83 @@ void DustEngine::unloadModel(Model& model) {
     if (!window) return;
     vkDeviceWaitIdle(vulkan.device);
     model.destroy(vulkan, window->renderer);
+}
+
+// ── DustUI ───────────────────────────────────────────────────────────────
+
+UI::Widget& DustEngine::beginUI() {
+    uiRoot = UI::Widget{};
+    uiRoot.size(vw(1.0f), vh(1.0f)); // invisible, spans the full viewport — everything else anchors against it
+    return uiRoot;
+}
+
+void DustEngine::endUI() {
+    if (!frameValid || !window) return;
+    if (!renderingBegun) {
+        auto& c = window->clearColor.color.float32;
+        clearBackground(c[0], c[1], c[2]);
+    }
+
+    UI::Rect viewport{ 0.0f, 0.0f, (float)window->width, (float)window->height };
+    uiRoot.layout(viewport);
+
+    VkExtent2D screenSize{ window->width, window->height };
+    uiRoot.forEachVisible([&](const UI::Widget& w) {
+        float fill[4]   = { w.backgroundColor.r, w.backgroundColor.g, w.backgroundColor.b, w.backgroundColor.a };
+        float border[4] = { w.borderColor.r,     w.borderColor.g,     w.borderColor.b,     w.borderColor.a };
+        window->renderer.drawUIRect(window->renderer.cmd(),
+            w.computedRect.x, w.computedRect.y, w.computedRect.w, w.computedRect.h,
+            w.computedBorderWidth, w.computedBorderRadius,
+            fill, border, w.opacityValue, screenSize);
+    });
+
+    if (uiFontLoaded) {
+        std::vector<UI::GlyphInstance> instances;
+        uiRoot.forEachText([&](const UI::Widget& w) {
+            float sizePx = w.textSize.resolve(w.computedRect.h, (float)window->height);
+
+            // Left-aligned, vertically centered within the widget's content
+            // box using the font's em-box (ascender/descender) rather than
+            // this string's actual ink — keeps a run of mixed glyphs (some
+            // with descenders, some without) from jittering the baseline.
+            float textHeight = (uiFont.ascender - uiFont.descender) * sizePx;
+            float topY       = w.computedContentRect.y + (w.computedContentRect.h - textHeight) * 0.5f;
+            float baselineY  = topY + uiFont.ascender * sizePx;
+
+            UI::layoutText(uiFont, w.textContent, sizePx, w.textColor,
+                           w.computedContentRect.x, baselineY, instances);
+        });
+        if (!instances.empty())
+            window->renderer.drawTextInstances(window->renderer.cmd(), uiFont, instances, screenSize);
+    }
+}
+
+bool DustEngine::loadUIFont(AssetManager& assets, const std::string& name) {
+    if (!window) {
+        fprintf(stderr, "dust: loadUIFont() needs a window (the atlas descriptor set belongs to its renderer)\n");
+        return false;
+    }
+    AssetHandle h = assets.load(name);
+    if (!valid(h)) {
+        fprintf(stderr, "dust: '%s' not found in pack\n", name.c_str());
+        return false;
+    }
+    const std::vector<uint8_t>* bytes = assets.data(h);
+
+    if (uiFontLoaded) unloadUIFont();
+    uiFont = UI::loadFontFromMemory(vulkan, window->renderer, bytes->data(), bytes->size());
+    assets.release(h);
+
+    uiFontLoaded = !uiFont.glyphs.empty();
+    return uiFontLoaded;
+}
+
+void DustEngine::unloadUIFont() {
+    if (!uiFontLoaded || !window) return;
+    vkDeviceWaitIdle(vulkan.device);
+    uiFont.destroy(vulkan, window->renderer);
+    uiFont = UI::Font{};
+    uiFontLoaded = false;
 }
 
 } // namespace Dust

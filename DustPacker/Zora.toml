@@ -26,3 +26,27 @@ system = "libzstd"
 # with Dust.
 [[target.DustPacker.deps]]
 system = "assimp"
+
+# Offline-only — converts .ttf/.otf into a DustFont MSDF atlas at pack time
+# (see AssetManager/FontFormat.hpp). Same vcpkg/Skia/SVG situation as
+# Engine's copy of this dep — see the comment there for why these flags
+# exist. DustPacker's own code links msdfgen-ext directly, which pulls in
+# freetype symbols, so freetype2 needs to be on DustPacker's own link line
+# too (msdfgen-ext.a doesn't drag its own deps along automatically).
+[[target.DustPacker.deps]]
+name = "msdfgen"
+git  = "https://github.com/Chlumsky/msdfgen"
+# See Engine/Zora.toml's copy of this dep for why header_only is forced —
+# msdfgen has both a build system and header dirs, which trips Zora's
+# auto-detect into an interactive prompt otherwise.
+header_only = false
+build_args = [
+    "-DMSDFGEN_USE_VCPKG=OFF",
+    "-DMSDFGEN_USE_SKIA=OFF",
+    "-DMSDFGEN_DISABLE_SVG=ON",
+    "-DMSDFGEN_BUILD_STANDALONE=OFF",
+    "-DMSDFGEN_INSTALL=ON",
+]
+
+[[target.DustPacker.deps]]
+system = "freetype2"

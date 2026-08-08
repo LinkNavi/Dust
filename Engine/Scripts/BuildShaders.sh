@@ -35,3 +35,4 @@ embed_pair() {
 
 embed_pair default default "$ENGINE_DIR/include/Core/Rendering/DefaultShaders.hpp"
 embed_pair ui      ui      "$ENGINE_DIR/include/Core/UI/UIShaders.hpp"
+embed_pair text    text    "$ENGINE_DIR/include/Core/UI/TextShaders.hpp"

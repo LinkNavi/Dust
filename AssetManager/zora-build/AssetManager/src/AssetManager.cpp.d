@@ -3,4 +3,5 @@
   /home/link/Programming/Dust/AssetManager/include/AssetManager/PackFormat.hpp \
   /home/link/Programming/Dust/AssetManager/include/AssetManager/AssetManager.hpp \
   /home/link/Programming/Dust/AssetManager/include/AssetManager/ModelFormat.hpp \
+  /home/link/Programming/Dust/AssetManager/include/AssetManager/FontFormat.hpp \
   /home/link/Programming/Dust/AssetManager/src/AssetManager.cpp

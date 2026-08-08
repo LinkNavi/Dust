@@ -1,0 +1,8 @@
+[project]
+name = "HERO"
+version = "0.1.0"
+
+[target.HERO]
+type = "staticlib"
+sources = ["src/**/*.cpp"]
+include_dirs = ["include"]

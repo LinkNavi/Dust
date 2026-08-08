@@ -16,6 +16,14 @@ struct PushConstantRange {
     uint32_t           offset = 0;
 };
 
+// One vertex attribute sourced from the optional second (instanced) vertex
+// binding — see PipelineBuilder::instanceAttribs below.
+struct InstanceAttrib {
+    uint32_t location;
+    VkFormat format;
+    uint32_t offset;
+};
+
 struct PipelineBuilder {
     ShaderModule        shader;
     VkPrimitiveTopology topology    = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -34,6 +42,14 @@ struct PipelineBuilder {
 
     // Push constant — set size=0 to disable
     PushConstantRange pushConstant;
+
+    // Optional second vertex binding (binding=1, VK_VERTEX_INPUT_RATE_INSTANCE)
+    // on top of the always-present binding=0 (Mesh::Vertex, per-vertex) —
+    // used by the text pipeline to feed one GlyphInstance per instance
+    // alongside the shared unit quad. Leave instanceAttribs empty for a
+    // normal (non-instanced) pipeline; nothing else changes.
+    std::vector<InstanceAttrib> instanceAttribs;
+    uint32_t                    instanceStride = 0;
 
     // Build — creates layout + pipeline, caller owns both
     bool build(VulkanContext& ctx,

@@ -95,8 +95,8 @@ struct DustEngine {
                  float rotationDeg, glm::vec3 scale = { 1.0f, 1.0f, 1.0f });
 
     // ── DustUI — see DustUI-API.md for the target API, UITimeline.md for
-    // what's built so far (Phase 1: layout + solid rounded-rect/border
-    // fills; no text/sprites/custom shaders yet).
+    // what's built so far (Phase 2: layout + solid rounded-rect/border
+    // fills + MSDF text; no sprites/custom shaders yet).
     //
     // beginUI() resets and returns the invisible full-viewport root widget —
     // attach top-level widgets to it with .child(...). DustUI-API.md shows
@@ -110,15 +110,26 @@ struct DustEngine {
     //   e.endUI();
     //
     // Immediate mode — the whole tree is rebuilt and redrawn every frame,
-    // no diffing yet (Phase 5). Draws after 3D content, always on top.
+    // no diffing yet (Phase 4). Draws after 3D content, always on top.
     UI::Widget& beginUI();
     void        endUI();
+
+    // One font, shared by every .text() widget — DustUI-API.md's .text()
+    // call has no per-widget font selection, and MSDF means one atlas
+    // already renders crisply at any size, so there's nothing to gain yet
+    // from supporting more than one loaded font. Dispatches on extension
+    // like loadModelFromPack() — expects a DustFont binary (".font",
+    // produced by DustPacker's msdfgen importer from a .ttf/.otf).
+    bool loadUIFont(AssetManager& assets, const std::string& name);
+    void unloadUIFont();
 
 private:
     glm::mat4  activeViewProj{ 1.0f };
     bool       frameValid     = false; // false on a skipped (swapchain-rebuild) frame
     bool       renderingBegun = false; // whether beginRendering() has run this frame
     UI::Widget uiRoot;
+    UI::Font   uiFont;
+    bool       uiFontLoaded = false;
 };
 
 } // namespace Dust

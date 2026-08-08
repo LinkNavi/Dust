@@ -2,4 +2,4 @@
 name = "Dust"
 
 [workspace]
-members = ["ECS","AssetManager", "Engine", "Runtime", "DustPacker"]
+members = ["HERO", "ECS","AssetManager", "Engine", "Runtime", "DustPacker", "HEROBench"]

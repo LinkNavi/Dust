@@ -57,6 +57,13 @@ int main() {
     // into one binary (see AssetManager/ModelFormat.hpp).
     Dust::Model checkerCube = e.loadModelFromPack(assets, "checker_cube.model"); // synthetic test asset
     Dust::Model duck        = e.loadModelFromPack(assets, "Duck.model");        // real-world glTF (Models/Duck.glb)
+
+    // DustUI text — MSDF atlas baked offline by DustPacker (msdfgen), one
+    // atlas renders crisply at every size .text() asks for. See
+    // Models/NotoSans-LICENSE.txt (Apache 2.0) for the font's license.
+    if (!e.loadUIFont(assets, "NotoSans-Regular.font"))
+        fprintf(stderr, "dust: failed to load UI font — text widgets will render as empty boxes\n");
+
     assets.close();
 
     // ── Camera ── pulled back far enough to frame all four objects in a row
@@ -90,6 +97,63 @@ int main() {
                 e.drawModel(checkerCube, {  1.5f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, rotation);
                 e.drawModel(duck,        {  4.5f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, rotation);
             e.endMode3D();
+
+            // DustUI — Phase 2 (see UITimeline.md): layout + solid rounded-
+            // rect/border fills + real MSDF text.
+            float playerHpPct = 0.55f + 0.45f * (sinf(t) * 0.5f + 0.5f); // animated, proves it's live per-frame
+
+            auto& ui = e.beginUI();
+
+            // Health Bar — DustUI-API.md "Real Examples", plus a label to
+            // exercise text sitting inside a Row alongside another widget.
+            ui.child(Dust::UI::Row()
+                .size(Dust::px(200), Dust::px(20))
+                .background(Dust::Colors::DarkRed)
+                .border(Dust::px(2), Dust::Colors::White, Dust::px(4))
+                .anchor(Dust::UI::Anchor::BottomCenter, Dust::px(0), Dust::px(-70))
+                .child(Dust::UI::Widget()
+                    .size(Dust::pct(playerHpPct), Dust::pct(1.0f))
+                    .background(Dust::Colors::Red)));
+
+            // Name Tag — real text now, centered in the box by endUI()'s
+            // vertical-centering rule (see DustEngine::endUI()).
+            ui.child(Dust::UI::Widget()
+                .size(Dust::px(120), Dust::px(30))
+                .background(Dust::Colors::DarkGray)
+                .border(Dust::px(2), Dust::Colors::White, Dust::px(5))
+                .anchor(Dust::UI::Anchor::TopCenter, Dust::px(0), Dust::px(20))
+                .padding(Dust::px(0), Dust::px(12))
+                .text("Kirby", Dust::px(14), Dust::Colors::White));
+
+            // Big text, same atlas as the 14px name tag above — proves one
+            // MSDF bake renders crisply at very different sizes, not just
+            // the size it happened to be baked at (48px here).
+            ui.child(Dust::UI::Widget()
+                .size(Dust::px(500), Dust::px(80))
+                .background(Dust::Colors::Black)
+                .anchor(Dust::UI::Anchor::Center, Dust::px(0), Dust::px(-150))
+                .padding(Dust::px(0), Dust::px(12))
+                .text("Quick Fox Jumps", Dust::px(48), Dust::Colors::White));
+
+            // Hotbar — Stack per slot (background + number label), Row to
+            // lay the slots out with a gap, matching DustUI-API.md's
+            // HotbarSlot example.
+            Dust::UI::Widget hotbar = Dust::UI::Row()
+                .gap(Dust::px(4))
+                .anchor(Dust::UI::Anchor::BottomCenter, Dust::px(0), Dust::px(0));
+            for (int i = 0; i < 6; i++) {
+                bool active = (i == 0);
+                hotbar.child(Dust::UI::Stack()
+                    .size(Dust::px(48), Dust::px(48))
+                    .background(active ? Dust::Colors::DarkGold : Dust::Colors::DarkGray)
+                    .border(Dust::px(2), active ? Dust::Colors::Gold : Dust::Colors::Gray, Dust::px(4))
+                    .child(Dust::UI::Widget()
+                        .anchor(Dust::UI::Anchor::BottomRight, Dust::px(0), Dust::px(0))
+                        .text(std::to_string(i + 1).c_str(), Dust::px(11), Dust::Colors::LightGray)));
+            }
+            ui.child(hotbar);
+
+            e.endUI();
         e.endDrawing();
     }
 

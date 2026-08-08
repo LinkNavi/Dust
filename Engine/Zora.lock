@@ -16,3 +16,9 @@ git    = "https://github.com/KhronosGroup/vulkan-headers"
 commit = "d314eae73fdc90847bb8304a86ee7c6a8ee023b6"
 built  = true
 
+[[dep]]
+name   = "msdfgen"
+git    = "https://github.com/Chlumsky/msdfgen"
+commit = "e06c7eaaaa071445ec77a1d73f942889f796b70b"
+built  = true
+

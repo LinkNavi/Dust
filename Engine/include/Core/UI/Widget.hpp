@@ -59,6 +59,7 @@ struct Widget {
 
     // ── computed by layout() — valid only after it's been called ──
     Rect  computedRect;
+    Rect  computedContentRect; // computedRect inset by padding — where children/text actually sit
     float computedBorderWidth  = 0.0f;
     float computedBorderRadius = 0.0f;
 
@@ -116,6 +117,16 @@ struct Widget {
             fn(*this);
         for (auto& c : children)
             c.forEachVisible(fn);
+    }
+
+    // Same idea, for widgets with .text() set — kept separate from
+    // forEachVisible since text goes through a different draw path
+    // (font/glyph batching, not a rounded-rect quad).
+    void forEachText(const std::function<void(const Widget&)>& fn) const {
+        if (hasText && !textContent.empty())
+            fn(*this);
+        for (auto& c : children)
+            c.forEachText(fn);
     }
 };
 

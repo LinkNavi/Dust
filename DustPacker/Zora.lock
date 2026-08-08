@@ -1,0 +1,6 @@
+[[dep]]
+name   = "msdfgen"
+git    = "https://github.com/Chlumsky/msdfgen"
+commit = "e06c7eaaaa071445ec77a1d73f942889f796b70b"
+built  = true
+

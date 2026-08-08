@@ -34,18 +34,20 @@
   /home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include/vulkan/vulkan_funcs.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/ShaderModule.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/DefaultShaders.hpp \
-  /home/link/Programming/Dust/Engine/include/Core/Rendering/PipelineBuilder.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Camera.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Swapchain.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Model.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Mesh.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Texture.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Rendering/PipelineBuilder.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Renderer.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/UIShaders.hpp \
-  /home/link/Programming/Dust/Engine/include/Core/Window.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/UI/Font.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Color.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Window.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Units.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Anchor.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/UI/TextShaders.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Widget.hpp \
   /home/link/Programming/Dust/Engine/include/DustEngine.hpp \
   /home/link/Programming/Dust/Engine/../AssetManager/include/AssetManager/AssetManager.hpp \

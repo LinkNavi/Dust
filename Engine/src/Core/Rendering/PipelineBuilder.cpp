@@ -63,13 +63,19 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     stages[1].pName  = "main";
 
     // ── Vertex input ──
-    auto binding = vertexBinding();
-    auto attribs = vertexAttribs();
+    std::vector<VkVertexInputBindingDescription> bindings = { vertexBinding() };
+    std::vector<VkVertexInputAttributeDescription> attribs = vertexAttribs();
+
+    if (!instanceAttribs.empty()) {
+        bindings.push_back({ 1, instanceStride, VK_VERTEX_INPUT_RATE_INSTANCE });
+        for (auto& a : instanceAttribs)
+            attribs.push_back({ a.location, 1, a.format, a.offset });
+    }
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount   = 1;
-    vertexInput.pVertexBindingDescriptions      = &binding;
+    vertexInput.vertexBindingDescriptionCount   = (uint32_t)bindings.size();
+    vertexInput.pVertexBindingDescriptions      = bindings.data();
     vertexInput.vertexAttributeDescriptionCount = (uint32_t)attribs.size();
     vertexInput.pVertexAttributeDescriptions    = attribs.data();
 
@@ -137,8 +143,12 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     renderingInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
     renderingInfo.colorAttachmentCount    = 1;
     renderingInfo.pColorAttachmentFormats = &swapchain.imageFormat;
-    if (depthTest)
-        renderingInfo.depthAttachmentFormat = swapchain.depthFormat;
+    // Unconditional, unlike depthTestEnable/depthWriteEnable below — every
+    // pipeline used inside Renderer::beginRendering()'s pass must declare
+    // the bound depth attachment's format, whether or not it actually tests
+    // or writes depth (VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-08914).
+    // depthTest=false just means "don't test/write", not "no depth attachment exists".
+    renderingInfo.depthAttachmentFormat = swapchain.depthFormat;
 
     // ── Create ──
     VkGraphicsPipelineCreateInfo pipelineInfo{};

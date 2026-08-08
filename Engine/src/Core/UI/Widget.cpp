@@ -40,6 +40,7 @@ void layoutRecursive(Widget& w, const Rect& parentContentRect, const Rect& viewp
         width  - padLeft - padRight,
         height - padTop  - padBottom
     };
+    w.computedContentRect = contentRect;
 
     if (w.layoutMode == LayoutMode::Row) {
         float gap    = w.gapUnit.resolve(contentRect.w, viewport.w);

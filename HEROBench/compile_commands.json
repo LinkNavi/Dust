@@ -1,0 +1,8 @@
+[
+  {
+    "directory": "/home/link/Programming/Dust/HEROBench",
+    "file": "/home/link/Programming/Dust/HEROBench/src/main.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/HEROBench/include -I/home/link/Programming/Dust/HEROBench/../HERO/include  -DHERO_BENCH_ENET -MMD -MF /home/link/Programming/Dust/HEROBench/zora-build/HEROBench/src/main.cpp.d -c /home/link/Programming/Dust/HEROBench/src/main.cpp -o /home/link/Programming/Dust/HEROBench/zora-build/HEROBench/src/main.cpp.o",
+    "output": "/home/link/Programming/Dust/HEROBench/zora-build/HEROBench/src/main.cpp.o"
+  }
+]

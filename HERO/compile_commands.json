@@ -1,0 +1,8 @@
+[
+  {
+    "directory": "/home/link/Programming/Dust/HERO",
+    "file": "/home/link/Programming/Dust/HERO/src/socket.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/HERO/include -MMD -MF /home/link/Programming/Dust/HERO/zora-build/HERO/src/socket.cpp.d -c /home/link/Programming/Dust/HERO/src/socket.cpp -o /home/link/Programming/Dust/HERO/zora-build/HERO/src/socket.cpp.o",
+    "output": "/home/link/Programming/Dust/HERO/zora-build/HERO/src/socket.cpp.o"
+  }
+]

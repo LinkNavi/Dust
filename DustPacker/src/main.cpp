@@ -12,6 +12,7 @@
 
 #include "AssetManager/PackFormat.hpp"
 #include "AssetManager/ModelFormat.hpp"
+#include "FontImport.hpp"
 #include <sodium.h>
 #include <zstd.h>
 #include <cstdio>
@@ -55,6 +56,11 @@ bool isModelExtension(std::string ext) {
     for (auto* e : kExts)
         if (ext == e) return true;
     return false;
+}
+
+bool isFontExtension(std::string ext) {
+    for (auto& c : ext) c = (char)tolower((unsigned char)c);
+    return ext == ".ttf" || ext == ".otf";
 }
 
 // aiMatrix4x4 is stored row-major (a1..a4 = row 0, ...). glm::mat4 (and the
@@ -336,6 +342,7 @@ int main(int argc, char** argv) {
 
         std::vector<uint8_t> raw;
         bool isModel = isModelExtension(p.path().extension().string());
+        bool isFont  = isFontExtension(p.path().extension().string());
         if (isModel) {
             printf("dustpacker: importing %-40s (via assimp)\n", name.c_str());
             raw = convertModelToDustBinary(p.path());
@@ -348,6 +355,16 @@ int main(int argc, char** argv) {
             // original format.
             fs::path renamed = rel;
             renamed.replace_extension(".model");
+            name = renamed.generic_string();
+        } else if (isFont) {
+            printf("dustpacker: importing %-40s (via msdfgen)\n", name.c_str());
+            raw = DustPacker::convertFontToDustBinary(p.path());
+            if (raw.empty()) {
+                fprintf(stderr, "dustpacker: skipping '%s' — font import failed\n", name.c_str());
+                continue;
+            }
+            fs::path renamed = rel;
+            renamed.replace_extension(".font");
             name = renamed.generic_string();
         } else {
             raw = readFile(p.path());

@@ -1,0 +1,16 @@
+[project]
+name = "HEROBench"
+version = "0.1.0"
+
+[target.HEROBench]
+type = "bin"
+sources = ["src/**/*.cpp"]
+include_dirs = ["include"]
+compiler_flags = ["-DHERO_BENCH_ENET"]
+
+[[target.HEROBench.deps]]
+name = "HERO"
+path = "../HERO"
+
+[[target.HEROBench.deps]]
+system = "libenet"

@@ -1,8 +1,12 @@
 #include "Core/Rendering/Renderer.hpp"
 #include "Core/Rendering/PipelineBuilder.hpp"
 #include "Core/Rendering/DefaultShaders.hpp"
+#include "Core/UI/TextShaders.hpp"
 #include "Core/Window.hpp"
+#include <algorithm>
+#include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <glm/glm.hpp>
 namespace Dust {
     bool Renderer::init(VulkanContext& ctx, Swapchain& swapchain) {
@@ -79,11 +83,65 @@ namespace Dust {
         uiPb.blendEnable = true;               // border/opacity both rely on alpha blending
         // rectPx + screenSize + fillColor + borderColor + params — see ui.vert/ui.frag
         uiPb.pushConstant = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 80 };
-        uiPb.build(ctx, swapchain, uiLayout, uiPipeline);
+        if (!uiPb.build(ctx, swapchain, uiLayout, uiPipeline)) {
+            fprintf(stderr, "dust: failed to build UI pipeline\n");
+            return false;
+        }
         uiShader.destroy(ctx.device);
 
         uiQuad = Mesh::makeQuad();
-        uiQuad.upload(ctx);
+        if (!uiQuad.upload(ctx)) {
+            fprintf(stderr, "dust: failed to upload UI quad\n");
+            return false;
+        }
+
+        // ── Text (MSDF) pipeline ──
+        auto textShader = ShaderModule::fromBytes(
+            ctx.device,
+            (uint32_t*)text_vert_spv, text_vert_spv_len,
+            (uint32_t*)text_frag_spv, text_frag_spv_len
+        );
+        if (!textShader.valid()) {
+            fprintf(stderr, "dust: failed to load text shaders\n");
+            return false;
+        }
+
+        PipelineBuilder textPb;
+        textPb.shader        = textShader;
+        textPb.userSetLayout = materialSetLayout; // atlas bound the same way a Model's baseColor texture is
+        textPb.cullMode      = VK_CULL_MODE_NONE;
+        textPb.depthTest     = false;
+        textPb.blendEnable   = true;
+        // screenSize + outlineColor + outlineParams — see text.vert/text.frag
+        textPb.pushConstant   = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 48 };
+        textPb.instanceStride = sizeof(UI::GlyphInstance);
+        textPb.instanceAttribs = {
+            { 4, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(UI::GlyphInstance, x) },       // rectPx: x,y,w,h
+            { 5, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(UI::GlyphInstance, uvMinX) },  // uv rect
+            { 6, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(UI::GlyphInstance, color) },   // Color is 4 contiguous floats
+            { 7, VK_FORMAT_R32_SFLOAT,          offsetof(UI::GlyphInstance, screenPxRange) },
+        };
+        if (!textPb.build(ctx, swapchain, textLayout, textPipeline)) {
+            fprintf(stderr, "dust: failed to build text pipeline\n");
+            return false;
+        }
+        textShader.destroy(ctx.device);
+
+        VkBufferCreateInfo textBufInfo{};
+        textBufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        textBufInfo.size  = sizeof(UI::GlyphInstance) * kTextInstanceCapacity;
+        textBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+        VmaAllocationCreateInfo textAllocInfo{};
+        textAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        textAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT; // persistent map, see textInstanceMapped
+
+        VmaAllocationInfo textAllocResult{};
+        if (vmaCreateBuffer(ctx.allocator, &textBufInfo, &textAllocInfo, &textInstanceBuffer, &textInstanceAlloc, &textAllocResult) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create text instance buffer\n");
+            return false;
+        }
+        textInstanceMapped = textAllocResult.pMappedData;
 
         return createFrameData(ctx);
     }
@@ -125,6 +183,9 @@ void Renderer::shutdown(VulkanContext& ctx) {
     if (uiPipeline)       { vkDestroyPipeline(ctx.device, uiPipeline, nullptr); uiPipeline = VK_NULL_HANDLE; }
     if (uiLayout)         { vkDestroyPipelineLayout(ctx.device, uiLayout, nullptr); uiLayout = VK_NULL_HANDLE; }
     uiQuad.destroy();
+    if (textPipeline)     { vkDestroyPipeline(ctx.device, textPipeline, nullptr); textPipeline = VK_NULL_HANDLE; }
+    if (textLayout)       { vkDestroyPipelineLayout(ctx.device, textLayout, nullptr); textLayout = VK_NULL_HANDLE; }
+    if (textInstanceBuffer) { vmaDestroyBuffer(ctx.allocator, textInstanceBuffer, textInstanceAlloc); textInstanceBuffer = VK_NULL_HANDLE; textInstanceMapped = nullptr; }
     defaultWhiteTexture.destroy(ctx);
     if (materialPool)       { vkDestroyDescriptorPool(ctx.device, materialPool, nullptr); materialPool = VK_NULL_HANDLE; }
     if (materialSetLayout)  { vkDestroyDescriptorSetLayout(ctx.device, materialSetLayout, nullptr); materialSetLayout = VK_NULL_HANDLE; }
@@ -221,6 +282,44 @@ void Renderer::drawUIRect(VkCommandBuffer cmd,
     vkCmdSetScissor(cmd, 0, 1, &sc);
 
     vkCmdDrawIndexed(cmd, uiQuad.indexCount, 1, 0, 0, 0);
+}
+
+void Renderer::drawTextInstances(VkCommandBuffer cmd, const UI::Font& font,
+                                 const std::vector<UI::GlyphInstance>& instances,
+                                 VkExtent2D screenSize,
+                                 float outlineWidthPx, Color outlineColor) {
+    if (instances.empty() || uiQuad.dirty || !textInstanceMapped || font.atlasSet == VK_NULL_HANDLE) return;
+
+    uint32_t count = (uint32_t)std::min(instances.size(), (size_t)kTextInstanceCapacity);
+    memcpy(textInstanceMapped, instances.data(), count * sizeof(UI::GlyphInstance));
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, textPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, textLayout, 0, 1, &font.atlasSet, 0, nullptr);
+
+    VkDeviceSize quadOffset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &uiQuad.vertexBuffer, &quadOffset);
+    VkDeviceSize instOffset = 0;
+    vkCmdBindVertexBuffers(cmd, 1, 1, &textInstanceBuffer, &instOffset);
+    vkCmdBindIndexBuffer(cmd, uiQuad.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    // Matches `Push { vec4 screenSize; vec4 outlineColor; vec4 outlineParams; }`
+    // in text.vert/text.frag exactly.
+    struct { float screenSize[4], outlineColor[4], outlineParams[4]; } pc;
+    pc.screenSize[0] = (float)screenSize.width; pc.screenSize[1] = (float)screenSize.height;
+    pc.screenSize[2] = 0.0f; pc.screenSize[3] = 0.0f;
+    pc.outlineColor[0] = outlineColor.r; pc.outlineColor[1] = outlineColor.g;
+    pc.outlineColor[2] = outlineColor.b; pc.outlineColor[3] = outlineColor.a;
+    pc.outlineParams[0] = outlineWidthPx; pc.outlineParams[1] = 0.0f; pc.outlineParams[2] = 0.0f; pc.outlineParams[3] = 0.0f;
+
+    vkCmdPushConstants(cmd, textLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+    VkViewport vp{ 0, 0, (float)screenSize.width, (float)screenSize.height, 0, 1 };
+    VkRect2D   sc{ {0, 0}, screenSize };
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+
+    vkCmdDrawIndexed(cmd, uiQuad.indexCount, count, 0, 0, 0);
 }
 
 bool Renderer::beginFrame(VulkanContext& ctx, Window& window) {
