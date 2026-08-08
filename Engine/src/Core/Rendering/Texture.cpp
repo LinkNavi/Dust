@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#define STB_IMAGE_IMPLEMENTATION
+#include "Core/stb_image.h"
 
 namespace Dust {
 
@@ -163,12 +165,25 @@ void Texture::destroy(VulkanContext& ctx) {
     if (view)    { vkDestroyImageView(ctx.device, view, nullptr);  view    = VK_NULL_HANDLE; }
     if (image)   { vmaDestroyImage(ctx.allocator, image, alloc);   image   = VK_NULL_HANDLE; alloc = VK_NULL_HANDLE; }
 }
-
+Texture Texture::loadFromFile(VulkanContext& ctx, const char* path, bool srgb) {
+    int w, h, channels;
+    stbi_uc* pixels = stbi_load(path, &w, &h, &channels, 4);
+    if (!pixels) {
+        fprintf(stderr, "dust: failed to load texture '%s': %s\n", path, stbi_failure_reason());
+        return Texture{};
+    }
+    Texture tex;
+    tex.upload(ctx, pixels, (uint32_t)w, (uint32_t)h, srgb);
+    stbi_image_free(pixels);
+    return tex;
+}
 Texture Texture::makeSolid(VulkanContext& ctx, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     Texture tex;
     uint8_t px[4] = { r, g, b, a };
     tex.upload(ctx, px, 1, 1);
     return tex;
 }
+
+
 
 } // namespace Dust

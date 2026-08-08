@@ -5,6 +5,7 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 #include "Core/Rendering/Swapchain.hpp"
+#include "Core/Input.hpp"
 #include <vector>
 #include <cstdint>
 
@@ -32,6 +33,9 @@ struct Window {
     bool         shouldClose;
     float        deltaTime;
     double       lastTime;
+    // Input — raw, unfiltered hardware state (see Core/Input.hpp). Game code
+    // should generally prefer DustEngine's capture-aware query API instead.
+    InputState   input;
 
     void setClearColor(float r, float g, float b, float a = 1.0f) {
         clearColor = { .color = { .float32 = { r, g, b, a } } };

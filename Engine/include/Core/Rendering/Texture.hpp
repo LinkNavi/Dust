@@ -27,7 +27,7 @@ struct Texture {
     bool upload(VulkanContext& ctx, const uint8_t* rgba8, uint32_t w, uint32_t h, bool srgb = true);
     void destroy(VulkanContext& ctx);
     bool valid() const { return image != VK_NULL_HANDLE; }
-
+static Texture loadFromFile(VulkanContext& ctx, const char* path, bool srgb = true);
     // 1x1 solid-color texture. Used as the engine-wide "no texture bound"
     // fallback (Renderer::defaultMaterialSet) so the default shader can
     // always unconditionally sample set=0/binding=0, textured or not.

@@ -40,15 +40,21 @@
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Mesh.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Texture.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/PipelineBuilder.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Rendering/ParticleSystem.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Rendering/ParticleComputeShaders.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Rendering/ParticleShaders.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Rendering/BillboardShaders.hpp \
   /home/link/Programming/Dust/Engine/include/Core/Rendering/Renderer.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/UIShaders.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Font.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Color.hpp \
-  /home/link/Programming/Dust/Engine/include/Core/Window.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Units.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Anchor.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/TextShaders.hpp \
   /home/link/Programming/Dust/Engine/include/Core/UI/Widget.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Window.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/Input.hpp \
+  /home/link/Programming/Dust/Engine/include/Core/stb_image.h \
   /home/link/Programming/Dust/Engine/include/DustEngine.hpp \
   /home/link/Programming/Dust/Engine/../AssetManager/include/AssetManager/AssetManager.hpp \
   /home/link/Programming/Dust/Engine/../AssetManager/include/AssetManager/PackFormat.hpp \

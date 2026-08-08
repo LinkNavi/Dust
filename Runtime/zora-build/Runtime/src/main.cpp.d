@@ -39,10 +39,14 @@
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/UIShaders.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/Font.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/Color.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Input.hpp \
   /home/link/Programming/Dust/Runtime/../ECS/include/DustECS.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Systems/Entity.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Camera.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/Model.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/ParticleSystem.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/PipelineBuilder.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/ShaderModule.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/Widget.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/Units.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/Anchor.hpp \

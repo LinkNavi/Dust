@@ -13,6 +13,12 @@
   },
   {
     "directory": "/home/link/Programming/Dust/Engine",
+    "file": "/home/link/Programming/Dust/Engine/src/Core/Input.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include -I/home/link/Programming/Dust/Engine/../AssetManager/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include/msdfgen -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Input.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/Input.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Input.cpp.o",
+    "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Input.cpp.o"
+  },
+  {
+    "directory": "/home/link/Programming/Dust/Engine",
     "file": "/home/link/Programming/Dust/Engine/src/Core/Rendering/VulkanContext.cpp",
     "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include -I/home/link/Programming/Dust/Engine/../AssetManager/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include/msdfgen -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/VulkanContext.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/Rendering/VulkanContext.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/VulkanContext.cpp.o",
     "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/VulkanContext.cpp.o"
@@ -58,6 +64,12 @@
     "file": "/home/link/Programming/Dust/Engine/src/Core/Rendering/PipelineBuilder.cpp",
     "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include -I/home/link/Programming/Dust/Engine/../AssetManager/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include/msdfgen -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/PipelineBuilder.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/Rendering/PipelineBuilder.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/PipelineBuilder.cpp.o",
     "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/PipelineBuilder.cpp.o"
+  },
+  {
+    "directory": "/home/link/Programming/Dust/Engine",
+    "file": "/home/link/Programming/Dust/Engine/src/Core/Rendering/ParticleSystem.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include -I/home/link/Programming/Dust/Engine/../AssetManager/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include/msdfgen -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/ParticleSystem.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/Rendering/ParticleSystem.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/ParticleSystem.cpp.o",
+    "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/Rendering/ParticleSystem.cpp.o"
   },
   {
     "directory": "/home/link/Programming/Dust/Engine",

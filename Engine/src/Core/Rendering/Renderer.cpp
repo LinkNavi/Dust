@@ -1,6 +1,9 @@
 #include "Core/Rendering/Renderer.hpp"
 #include "Core/Rendering/PipelineBuilder.hpp"
 #include "Core/Rendering/DefaultShaders.hpp"
+#include "Core/Rendering/ParticleShaders.hpp"
+#include "Core/Rendering/BillboardShaders.hpp"
+#include "Core/Rendering/ParticleSystem.hpp"
 #include "Core/UI/TextShaders.hpp"
 #include "Core/Window.hpp"
 #include <algorithm>
@@ -143,6 +146,58 @@ namespace Dust {
         }
         textInstanceMapped = textAllocResult.pMappedData;
 
+        // ── Particle pipeline ──
+        auto particleShader = ShaderModule::fromBytes(
+            ctx.device,
+            (uint32_t*)particle_vert_spv, particle_vert_spv_len,
+            (uint32_t*)particle_frag_spv, particle_frag_spv_len
+        );
+        if (!particleShader.valid()) {
+            fprintf(stderr, "dust: failed to load particle shaders\n");
+            return false;
+        }
+
+        PipelineBuilder particlePb;
+        particlePb.shader        = particleShader;
+        particlePb.userSetLayout = materialSetLayout; // texture at set=0, binding=0
+        particlePb.cullMode      = VK_CULL_MODE_NONE;
+        particlePb.depthTest     = true;
+        particlePb.blendEnable   = true;
+        // viewProj(mat4=64) + camRight(vec4=16) + camUp(vec4=16) = 96 bytes
+        particlePb.pushConstant  = { VK_SHADER_STAGE_VERTEX_BIT, 96 };
+        particlePb.instanceStride  = ParticleSystem::instanceStride();
+        particlePb.instanceAttribs = ParticleSystem::getInstanceAttribs();
+        if (!particlePb.build(ctx, swapchain, particleLayout, particlePipeline)) {
+            fprintf(stderr, "dust: failed to build particle pipeline\n");
+            return false;
+        }
+        particleShader.destroy(ctx.device);
+
+        // ── Billboard pipeline ──
+        auto bbShader = ShaderModule::fromBytes(
+            ctx.device,
+            (uint32_t*)billboard_vert_spv, billboard_vert_spv_len,
+            (uint32_t*)billboard_frag_spv, billboard_frag_spv_len
+        );
+        if (!bbShader.valid()) {
+            fprintf(stderr, "dust: failed to load billboard shaders\n");
+            return false;
+        }
+
+        PipelineBuilder bbPb;
+        bbPb.shader        = bbShader;
+        bbPb.userSetLayout = materialSetLayout;
+        bbPb.cullMode      = VK_CULL_MODE_NONE;
+        bbPb.depthTest     = true;
+        bbPb.blendEnable   = true;
+        // viewProj(64) + camRight(16) + camUp(16) + position(16) + color(16) = 128 bytes
+        bbPb.pushConstant  = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 128 };
+        if (!bbPb.build(ctx, swapchain, billboardLayout, billboardPipeline)) {
+            fprintf(stderr, "dust: failed to build billboard pipeline\n");
+            return false;
+        }
+        bbShader.destroy(ctx.device);
+
         return createFrameData(ctx);
     }
 
@@ -183,6 +238,10 @@ void Renderer::shutdown(VulkanContext& ctx) {
     if (uiPipeline)       { vkDestroyPipeline(ctx.device, uiPipeline, nullptr); uiPipeline = VK_NULL_HANDLE; }
     if (uiLayout)         { vkDestroyPipelineLayout(ctx.device, uiLayout, nullptr); uiLayout = VK_NULL_HANDLE; }
     uiQuad.destroy();
+    if (particlePipeline)  { vkDestroyPipeline(ctx.device, particlePipeline, nullptr); particlePipeline = VK_NULL_HANDLE; }
+    if (particleLayout)    { vkDestroyPipelineLayout(ctx.device, particleLayout, nullptr); particleLayout = VK_NULL_HANDLE; }
+    if (billboardPipeline) { vkDestroyPipeline(ctx.device, billboardPipeline, nullptr); billboardPipeline = VK_NULL_HANDLE; }
+    if (billboardLayout)   { vkDestroyPipelineLayout(ctx.device, billboardLayout, nullptr); billboardLayout = VK_NULL_HANDLE; }
     if (textPipeline)     { vkDestroyPipeline(ctx.device, textPipeline, nullptr); textPipeline = VK_NULL_HANDLE; }
     if (textLayout)       { vkDestroyPipelineLayout(ctx.device, textLayout, nullptr); textLayout = VK_NULL_HANDLE; }
     if (textInstanceBuffer) { vmaDestroyBuffer(ctx.allocator, textInstanceBuffer, textInstanceAlloc); textInstanceBuffer = VK_NULL_HANDLE; textInstanceMapped = nullptr; }
@@ -322,11 +381,95 @@ void Renderer::drawTextInstances(VkCommandBuffer cmd, const UI::Font& font,
     vkCmdDrawIndexed(cmd, uiQuad.indexCount, count, 0, 0, 0);
 }
 
+void Renderer::drawParticles(VkCommandBuffer cmd,
+                              ParticleSystem& ps,
+                              const glm::mat4& viewProj,
+                              const glm::vec3& camRight,
+                              const glm::vec3& camUp,
+                              VkDescriptorSet materialSet) {
+    if (ps.maxParticles() == 0 || uiQuad.dirty) return;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particlePipeline);
+
+    VkDescriptorSet tex = (materialSet != VK_NULL_HANDLE) ? materialSet : defaultMaterialSet;
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particleLayout, 0, 1, &tex, 0, nullptr);
+
+    // Binding 0: unit quad (per-vertex), Binding 1: particle buffer (per-instance)
+    VkBuffer     bufs[2]    = { uiQuad.vertexBuffer, ps.particleBuffer() };
+    VkDeviceSize offsets[2] = { 0, 0 };
+    vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
+    vkCmdBindIndexBuffer(cmd, uiQuad.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    struct { glm::mat4 vp; glm::vec4 right; glm::vec4 up; } pc;
+    pc.vp    = viewProj;
+    pc.right = glm::vec4(camRight, 0.0f);
+    pc.up    = glm::vec4(camUp,    0.0f);
+    vkCmdPushConstants(cmd, particleLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
+
+    VkViewport vp{ 0, 0, (float)currentExtent.width, (float)currentExtent.height, 0, 1 };
+    VkRect2D   sc{ {0, 0}, currentExtent };
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+
+    // One instanced draw — dead particles are zeroed out in the shader (life <= 0 → size 0)
+    vkCmdDrawIndexed(cmd, uiQuad.indexCount, ps.maxParticles(), 0, 0, 0);
+}
+
+void Renderer::drawBillboard(VkCommandBuffer cmd,
+                              const glm::mat4& viewProj,
+                              const glm::vec3& camRight,
+                              const glm::vec3& camUp,
+                              glm::vec3 position, float size,
+                              glm::vec4 color,
+                              VkDescriptorSet materialSet) {
+    if (uiQuad.dirty) return;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, billboardPipeline);
+
+    VkDescriptorSet tex = (materialSet != VK_NULL_HANDLE) ? materialSet : defaultMaterialSet;
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, billboardLayout, 0, 1, &tex, 0, nullptr);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &uiQuad.vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(cmd, uiQuad.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    struct { glm::mat4 vp; glm::vec4 right; glm::vec4 up; glm::vec4 pos; glm::vec4 col; } pc;
+    pc.vp    = viewProj;
+    pc.right = glm::vec4(camRight, 0.0f);
+    pc.up    = glm::vec4(camUp,    0.0f);
+    pc.pos   = glm::vec4(position, size);
+    pc.col   = color;
+    vkCmdPushConstants(cmd, billboardLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+    VkViewport vp{ 0, 0, (float)currentExtent.width, (float)currentExtent.height, 0, 1 };
+    VkRect2D   sc{ {0, 0}, currentExtent };
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+
+    vkCmdDrawIndexed(cmd, uiQuad.indexCount, 1, 0, 0, 0);
+}
+
 bool Renderer::beginFrame(VulkanContext& ctx, Window& window) {
     FrameData& frame = frames[currentFrame];
 
     // Wait for this frame slot to be free
     vkWaitForFences(ctx.device, 1, &frame.renderFence, VK_TRUE, UINT64_MAX);
+
+    // Resize check. Not every platform reports OUT_OF_DATE/SUBOPTIMAL on
+    // resize (Wayland in particular happily keeps presenting a stale-sized
+    // swapchain), so compare against the framebuffer size directly. Without
+    // this the swapchain stays at its creation size while layout/viewport
+    // use the real window size — everything draws magnified and the bottom
+    // and right of the UI falls outside the render area entirely.
+    if (window.width > 0 && window.height > 0 &&
+        (window.swapchain.extent.width  != window.width ||
+         window.swapchain.extent.height != window.height) &&
+        (lastResizeRequest.width != window.width || lastResizeRequest.height != window.height)) {
+        lastResizeRequest = { window.width, window.height };
+        window.swapchain.rebuild(ctx, window);
+        return false;
+    }
 
     // Lazily size to the swapchain's image count (see the field comment in
     // Renderer.hpp for why this can't just live in FrameData).

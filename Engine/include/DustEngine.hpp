@@ -8,6 +8,8 @@
 #include "Core/Rendering/Camera.hpp"
 #include "Core/Rendering/Mesh.hpp"
 #include "Core/Rendering/Model.hpp"
+#include "Core/Rendering/Texture.hpp"
+#include "Core/Rendering/ParticleSystem.hpp"
 #include "Core/UI/Widget.hpp"
 #include "AssetManager/AssetManager.hpp"
 #include <functional>
@@ -94,6 +96,40 @@ struct DustEngine {
     void drawMesh(Mesh& mesh, glm::vec3 position, glm::vec3 rotationAxis,
                  float rotationDeg, glm::vec3 scale = { 1.0f, 1.0f, 1.0f });
 
+    // ── Textures — load a PNG/JPG/BMP/TGA from disk and upload to GPU.
+    // Pass the returned Texture to drawBillboard() or drawParticles() as the
+    // material. Call unloadTexture() before shutdown().
+    Texture loadTexture(const char* path);
+    void    unloadTexture(Texture& tex);
+
+    // Create a VkDescriptorSet for a Texture so it can be passed to
+    // drawBillboard() / drawParticles(). The returned set is owned by the
+    // material pool — free it with vkFreeDescriptorSets when done, or just
+    // let shutdown() destroy the pool.
+    VkDescriptorSet createTextureSet(const Texture& tex);
+
+    // ── Billboards — single camera-facing quad with a texture.
+    // Call inside beginDrawing()/endDrawing() after beginMode3D().
+    // size is world-space diameter. color is an RGBA tint (default white).
+    void drawBillboard(glm::vec3 position, float size,
+                       VkDescriptorSet texSet,
+                       glm::vec4 color = glm::vec4(1.0f));
+
+    // ── Particles — draw all slots in ps as instanced billboard quads.
+    // Dead particles (life <= 0) are collapsed to zero size on the GPU — no
+    // CPU bookkeeping needed. Call after beginMode3D() each frame; the compute
+    // shader runs physics before this draw is submitted.
+    // dispatchParticles() must be called before beginDrawing() to simulate.
+    void drawParticles(ParticleSystem& ps, VkDescriptorSet texSet = VK_NULL_HANDLE);
+
+    // Dispatch the compute shader to simulate ps for dt seconds.
+    // Call this BEFORE beginDrawing() — compute runs on the graphics queue
+    // before the graphics pass begins.
+    void dispatchParticles(ParticleSystem& ps, float dt,
+                           float gravityY = -9.8f, float drag = 0.01f,
+                           VkPipeline computePipeline  = VK_NULL_HANDLE,
+                           VkPipelineLayout computeLayout = VK_NULL_HANDLE);
+
     // ── DustUI — see DustUI-API.md for the target API, UITimeline.md for
     // what's built so far (Phase 2: layout + solid rounded-rect/border
     // fills + MSDF text; no sprites/custom shaders yet).
@@ -123,13 +159,71 @@ struct DustEngine {
     bool loadUIFont(AssetManager& assets, const std::string& name);
     void unloadUIFont();
 
+    // ── Input — one system, shared by the engine and DustUI (UITimeline.md
+    // Phase 3). Key/button codes are plain GLFW constants (GLFW_KEY_W,
+    // GLFW_MOUSE_BUTTON_LEFT, ...) — consistent with the rest of Dust not
+    // hiding its backends (VulkanContext exposes raw vk-bootstrap types the
+    // same way).
+    //
+    // Capture-aware by default: while a focusable UI widget holds keyboard
+    // focus (e.g. a text box — see Widget::onFocus()), isKeyDown()/
+    // isKeyPressed()/isKeyReleased() report *no* keys down at all, so typing
+    // "w" into a name field doesn't also walk your player character
+    // forward. Same idea for the mouse — while the cursor is over an
+    // interactive widget (Widget::onClick()/onHover()/onFocus()),
+    // isMouseButtonDown() and friends go quiet and mouseDelta() reports
+    // zero, so dragging a UI slider doesn't also spin a free-look camera.
+    // Pass ignoreUICapture=true to see the real state anyway (e.g. a pause
+    // menu's Escape key should work no matter what has focus).
+    //
+    // mousePosition()/typedTextThisFrame() are always raw — a position
+    // isn't "consumed" the way a press is, and typed text is only ever
+    // meaningful to whatever's actually reading it (your code, or the
+    // focused widget) so there's nothing useful to suppress.
+    bool isKeyDown(int key, bool ignoreUICapture = false) const;
+    bool isKeyPressed(int key, bool ignoreUICapture = false) const;
+    bool isKeyReleased(int key, bool ignoreUICapture = false) const;
+
+    bool isMouseButtonDown(int button, bool ignoreUICapture = false) const;
+    bool isMouseButtonPressed(int button, bool ignoreUICapture = false) const;
+    bool isMouseButtonReleased(int button, bool ignoreUICapture = false) const;
+
+    glm::vec2 mousePosition() const;
+    glm::vec2 mouseDelta(bool ignoreUICapture = false) const;
+    float     mouseScrollY(bool ignoreUICapture = false) const;
+
+    const std::string& typedTextThisFrame() const;
+
+    // What DustUI claimed *this frame* — the same flags isKeyDown()/
+    // isMouseButtonDown() already check internally, exposed directly for
+    // when you need to branch on it yourself (e.g. skip a raycast into the
+    // world entirely if the click was actually on a UI widget).
+    bool uiWantsMouse() const;
+    bool uiWantsKeyboard() const;
+
 private:
     glm::mat4  activeViewProj{ 1.0f };
-    bool       frameValid     = false; // false on a skipped (swapchain-rebuild) frame
-    bool       renderingBegun = false; // whether beginRendering() has run this frame
+    glm::vec3  activeCamRight{ 1.0f, 0.0f, 0.0f };
+    glm::vec3  activeCamUp   { 0.0f, 1.0f, 0.0f };
+    bool       frameValid     = false;
+    bool       renderingBegun = false;
     UI::Widget uiRoot;
     UI::Font   uiFont;
     bool       uiFontLoaded = false;
+
+    // Persistent across frames on purpose — the Widget tree is rebuilt from
+    // scratch every frame (immediate mode), so hover/focus/press state
+    // can't live on a Widget instance. Identified by Widget's implicit
+    // path-hash id (see Core/UI/Widget.hpp) instead of a pointer, so there's
+    // nothing here that can dangle when the tree gets rebuilt.
+    uint64_t uiHoveredId = 0;
+    uint64_t uiFocusedId = 0;
+    uint64_t uiPressedId = 0; // widget that got the mouse-down half of a click
+
+    // Lazily-built compute pipeline for particle simulation
+    VkPipelineLayout m_particleComputeLayout   = VK_NULL_HANDLE;
+    VkPipeline       m_particleComputePipeline = VK_NULL_HANDLE;
+    bool             ensureComputePipeline();
 };
 
 } // namespace Dust

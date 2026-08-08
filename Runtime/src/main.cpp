@@ -66,6 +66,29 @@ int main() {
 
     assets.close();
 
+    // ── Particles ──
+    Dust::ParticleSystem ps;
+    ps.init(e.vulkan.allocator, e.vulkan.device,
+            e.vulkan.graphicsFamily, e.vulkan.graphicsQueue, 5000);
+
+    Dust::Texture sonicTex = e.loadTexture("Models/sonic.png");
+    if (!sonicTex.valid()) {
+        fprintf(stderr, "dust: sonic.png not found — check working directory\n");
+    }
+    VkDescriptorSet sonicSet = e.createTextureSet(sonicTex);
+
+    // Burst emit at startup — continuous re-emission happens in the loop below
+    for (int i = 0; i < 200; i++) {
+        float angle = (float)i / 200.0f * 6.2831f;
+        ps.emit({
+            .pos   = { 0.0f, 0.0f, 0.0f },
+            .life  = 3.0f + (float)(i % 5) * 0.5f,
+            .vel   = { cosf(angle) * 2.0f, 4.0f + (float)(i % 3), sinf(angle) * 2.0f },
+            .size  = 0.15f,
+            .color = { 1.0f, 0.8f, 0.2f, 1.0f },
+        });
+    }
+
     // ── Camera ── pulled back far enough to frame all four objects in a row
     Dust::Camera camera;
     camera.position = { 0.0f, 2.0f, 10.0f };
@@ -75,9 +98,33 @@ int main() {
     float t        = 0.0f;
     float rotation = 0.0f;
 
+    // DustUI input demo state (UITimeline.md Phase 3) — persists across
+    // frames on purpose, same reason DustEngine keeps uiHoveredId/
+    // uiFocusedId itself: the widget tree is rebuilt from scratch every
+    // frame, so nothing here can live on a Widget instance.
+    int         activeSlot  = 0;     // which hotbar slot .onClick() last selected
+    int         hoveredSlot = -1;    // which slot .onHover() saw this frame, -1 = none
+    bool        chatFocused = false; // whether the chat box currently holds keyboard focus
+    std::string chatText;
+
     while (!e.shouldClose()) {
         t        += e.deltaTime();
         rotation += e.deltaTime() * 60.0f; // degrees/sec
+
+        // Dispatch particle compute before the graphics pass
+        e.dispatchParticles(ps, e.deltaTime());
+
+        // Trickle-emit a few particles per frame so the system stays populated
+        for (int i = 0; i < 5; i++) {
+            float angle = t * 3.0f + (float)i * 1.2566f; // evenly spread
+            ps.emit({
+                .pos   = { 0.0f, 0.0f, 0.0f },
+                .life  = 3.0f,
+                .vel   = { cosf(angle) * 2.0f, 4.0f + (float)i * 0.4f, sinf(angle) * 2.0f },
+                .size  = 0.15f,
+                .color = { 1.0f, 0.8f, 0.2f, 1.0f },
+            });
+        }
 
         // Mesh API — live vert edit, re-uploaded every frame. Proves you can
         // poke .vertSlots directly (deforming meshes, procedural animation)
@@ -96,6 +143,7 @@ int main() {
                 e.drawModel(objCube,     { -1.5f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, rotation);
                 e.drawModel(checkerCube, {  1.5f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, rotation);
                 e.drawModel(duck,        {  4.5f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, rotation);
+                e.drawParticles(ps, sonicSet);
             e.endMode3D();
 
             // DustUI — Phase 2 (see UITimeline.md): layout + solid rounded-
@@ -137,23 +185,60 @@ int main() {
 
             // Hotbar — Stack per slot (background + number label), Row to
             // lay the slots out with a gap, matching DustUI-API.md's
-            // HotbarSlot example.
+            // HotbarSlot example. Click selects a slot, hover brightens the
+            // border — colors below reflect *last* frame's hoveredSlot/
+            // activeSlot (hoveredSlot is reset just before endUI() so a
+            // slot that stops being hovered doesn't stay lit).
             Dust::UI::Widget hotbar = Dust::UI::Row()
                 .gap(Dust::px(4))
-                .anchor(Dust::UI::Anchor::BottomCenter, Dust::px(0), Dust::px(0));
+                .anchor(Dust::UI::Anchor::BottomCenter, Dust::px(0), Dust::px(-24)); // margin so it isn't flush against the window edge
             for (int i = 0; i < 6; i++) {
-                bool active = (i == 0);
+                bool active  = (i == activeSlot);
+                bool hovered = (i == hoveredSlot);
+                Dust::Color borderCol = hovered ? Dust::Colors::White : (active ? Dust::Colors::Gold : Dust::Colors::Gray);
                 hotbar.child(Dust::UI::Stack()
                     .size(Dust::px(48), Dust::px(48))
                     .background(active ? Dust::Colors::DarkGold : Dust::Colors::DarkGray)
-                    .border(Dust::px(2), active ? Dust::Colors::Gold : Dust::Colors::Gray, Dust::px(4))
+                    .border(Dust::px(2), borderCol, Dust::px(4))
+                    .onClick([&activeSlot, i]() { activeSlot = i; })
+                    .onHover([&hoveredSlot, i]() { hoveredSlot = i; })
                     .child(Dust::UI::Widget()
-                        .anchor(Dust::UI::Anchor::BottomRight, Dust::px(0), Dust::px(0))
+                        .anchor(Dust::UI::Anchor::BottomRight, Dust::px(-4), Dust::px(-4))
                         .text(std::to_string(i + 1).c_str(), Dust::px(11), Dust::Colors::LightGray)));
             }
             ui.child(hotbar);
 
+            // Chat box — the concrete "movement vs. text box" proof: click
+            // it to focus, then type. While focused, isKeyDown()/
+            // isKeyPressed() report no keys at all by default (see
+            // DustEngine::isKeyDown()'s doc comment), so the simulated
+            // "player movement" below goes quiet even though WASD is still
+            // physically held — no manual "am I typing" check needed at the
+            // call site, that's the whole point of a unified input system.
+            ui.child(Dust::UI::Widget()
+                .size(Dust::px(320), Dust::px(30))
+                .background(Dust::Colors::DarkGray)
+                .border(Dust::px(2), chatFocused ? Dust::Colors::Cyan : Dust::Colors::Gray, Dust::px(4))
+                .anchor(Dust::UI::Anchor::BottomLeft, Dust::px(10), Dust::px(-24))
+                .padding(Dust::px(0), Dust::px(8))
+                .onFocus([&chatFocused]() { chatFocused = true; })
+                .text(chatText.empty() ? "Click, then type (WASD works normally until you do)" : chatText.c_str(),
+                     Dust::px(13), chatText.empty() ? Dust::Colors::Gray : Dust::Colors::White));
+
+            hoveredSlot = -1; // see comment above — must run after the widgets that read it, before endUI()'s hit-test can set it fresh
+            chatFocused = false; // same idea: endUI() sets this back to true this frame iff the chat box is still actually focused
+
             e.endUI();
+
+            // Everything below reads input *after* endUI() so uiWantsKeyboard()/
+            // uiWantsMouse() reflect this frame's freshly-computed hit-test,
+            // not last frame's.
+            if (e.uiWantsKeyboard()) {
+                chatText += e.typedTextThisFrame(); // raw — always available regardless of capture, meant for whoever's focused to read
+                if (e.isKeyPressed(GLFW_KEY_BACKSPACE, /*ignoreUICapture=*/true) && !chatText.empty())
+                    chatText.pop_back();
+            }
+            if (e.isKeyPressed(GLFW_KEY_W)) Dust::log("(sim) player moves forward — uiWantsKeyboard()=", e.uiWantsKeyboard());
         e.endDrawing();
     }
 
@@ -161,6 +246,8 @@ int main() {
     e.unloadModel(objCube);
     e.unloadModel(checkerCube);
     e.unloadModel(duck);
+    ps.cleanup();
+    e.unloadTexture(sonicTex);
     e.shutdown();
     return 0;
 }

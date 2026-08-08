@@ -87,21 +87,37 @@ struct Renderer {
                            VkExtent2D screenSize,
                            float outlineWidthPx = 0.0f, Color outlineColor = Colors::Transparent);
 
-    // ── Particles ── procedurally generated billboard quads instanced
-    // per particle — see Shaders/particle.vert/frag and ParticleSystem.hpp.
+    // ── Particles ── compute-simulated billboard quads, one per particle slot.
+    // Dead particles (life <= 0) are collapsed to zero size in the shader.
     VkPipelineLayout particleLayout   = VK_NULL_HANDLE;
     VkPipeline       particlePipeline = VK_NULL_HANDLE;
 
-    // Submits a particle draw pass using camera vectors and optional material texture
     void drawParticles(VkCommandBuffer cmd,
-                       ParticleSystem& particleSystem,
+                       ParticleSystem& ps,
                        const glm::mat4& viewProj,
                        const glm::vec3& camRight,
                        const glm::vec3& camUp,
                        VkDescriptorSet materialSet = VK_NULL_HANDLE);
 
+    // ── Billboards ── single camera-facing textured quad, no instancing.
+    VkPipelineLayout billboardLayout   = VK_NULL_HANDLE;
+    VkPipeline       billboardPipeline = VK_NULL_HANDLE;
+
+    void drawBillboard(VkCommandBuffer cmd,
+                       const glm::mat4& viewProj,
+                       const glm::vec3& camRight,
+                       const glm::vec3& camUp,
+                       glm::vec3 position, float size,
+                       glm::vec4 color = glm::vec4(1.0f),
+                       VkDescriptorSet materialSet = VK_NULL_HANDLE);
+
     std::vector<VkSemaphore> renderFinishedSemaphores;
     VkExtent2D currentExtent = {};
+    // Last framebuffer size we asked the swapchain to match. The surface can
+    // legitimately clamp us to something else (min/maxImageExtent), so we
+    // only retry when the *request* changes — otherwise beginFrame would
+    // rebuild forever and never draw a frame.
+    VkExtent2D lastResizeRequest = {};
     vkb::DispatchTable dispatch;
     void draw(VkCommandBuffer cmd, Mesh& mesh,
               VkPipeline pipeline, VkPipelineLayout layout,

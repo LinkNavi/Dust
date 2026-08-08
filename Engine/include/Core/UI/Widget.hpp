@@ -3,6 +3,7 @@
 #include "Core/UI/Units.hpp"
 #include "Core/UI/Anchor.hpp"
 #include "Core/UI/Color.hpp"
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <functional>
@@ -15,8 +16,8 @@ enum class LayoutMode { None, Row, Column, Stack };
 // Stack) are just Widgets with layoutMode set, components are C++ functions
 // that build and return one. See DustUI-API.md for the target API this
 // implements, and UITimeline.md for what's built vs. still to come (no
-// text rendering, images, or custom shaders yet — this is Phase 1: layout
-// + solid rounded-rect/border rendering only).
+// sprites/custom shaders yet — layout, solid rounded-rect/border fills,
+// MSDF text, and click/hover/focus input are all done).
 struct Widget {
     // ── size ──
     Unit width  = px(0);
@@ -57,11 +58,24 @@ struct Widget {
     Unit              gapUnit    = px(0);
     std::vector<Widget> children;
 
-    // ── computed by layout() — valid only after it's been called ──
-    Rect  computedRect;
-    Rect  computedContentRect; // computedRect inset by padding — where children/text actually sit
-    float computedBorderWidth  = 0.0f;
-    float computedBorderRadius = 0.0f;
+    // ── input (UITimeline.md Phase 3) — level-triggered: onHover/onFocus
+    // fire every frame the condition holds (not just on the transition),
+    // since the widget triggering them is rebuilt fresh each frame anyway
+    // and there's no stale old-widget to diff against. onClick is the one
+    // genuinely edge-triggered case (a full press+release over the same
+    // widget) — see DustEngine::endUI() for the dispatch logic. Setting any
+    // of these is what makes a widget hit-testable at all; a plain
+    // decorative Widget with none of them set is invisible to input.
+    std::function<void()> onClickFn;
+    std::function<void()> onHoverFn;
+    std::function<void()> onFocusFn; // only onFocusFn also makes a widget *focusable* — see .onFocus()
+
+    // ── computed — valid only after layout() has run ──
+    Rect     computedRect;
+    Rect     computedContentRect; // computedRect inset by padding — where children/text actually sit
+    float    computedBorderWidth  = 0.0f;
+    float    computedBorderRadius = 0.0f;
+    uint64_t computedId = 0; // implicit path-hash identity — see Widget.cpp's layoutRecursive
 
     // ── builder methods ──
     Widget& size(Unit w, Unit h) { width = w; height = h; return *this; }
@@ -92,7 +106,6 @@ struct Widget {
         return *this;
     }
 
-    // Stored for when Phase 2 (font system) lands — no glyphs drawn yet.
     Widget& text(const char* content, Unit size_, Color color_) {
         hasText = true; textContent = content; textSize = size_; textColor = color_;
         return *this;
@@ -103,6 +116,17 @@ struct Widget {
     Widget& gap(Unit g) { gapUnit = g; return *this; }
 
     Widget& child(Widget w) { children.push_back(std::move(w)); return *this; }
+
+    // ── input ── setting any of these makes the widget hit-testable.
+    Widget& onClick(std::function<void()> fn) { onClickFn = std::move(fn); return *this; }
+    Widget& onHover(std::function<void()> fn) { onHoverFn = std::move(fn); return *this; }
+    // Also makes the widget focusable — clicking it makes it the keyboard-
+    // capture target (DustEngine::uiWantsKeyboard()) until something else is
+    // clicked. A widget with only .onClick()/.onHover() never takes focus.
+    Widget& onFocus(std::function<void()> fn) { onFocusFn = std::move(fn); return *this; }
+
+    bool isInteractive() const { return (bool)onClickFn || (bool)onHoverFn || (bool)onFocusFn; }
+    bool isFocusable()   const { return (bool)onFocusFn; }
 
     // Computes computedRect (+ computedBorder*) for this widget and every
     // descendant, given the viewport in pixels. Call once per frame on the
@@ -127,6 +151,18 @@ struct Widget {
             fn(*this);
         for (auto& c : children)
             c.forEachText(fn);
+    }
+
+    // Widgets with .onClick()/.onHover()/.onFocus() set — what
+    // DustEngine::endUI() hit-tests against and dispatches callbacks
+    // through. Visited in the same parent-then-children order as
+    // forEachVisible/forEachText, so "last match under the cursor" during
+    // hit-testing naturally means "topmost" (children draw over parents).
+    void forEachInteractive(const std::function<void(const Widget&)>& fn) const {
+        if (isInteractive())
+            fn(*this);
+        for (auto& c : children)
+            c.forEachInteractive(fn);
     }
 };
 

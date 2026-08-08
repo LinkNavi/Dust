@@ -40,7 +40,19 @@ Window& WindowManager::create(const WindowConfig& cfg, VulkanContext& ctx) {
 
     w.swapchain.init(ctx, w);
     windows.push_back(w);
-    return windows.back();
+    Window& stored = windows.back();
+
+    // Callbacks write into *this* Window's InputState, found via the GLFW
+    // user pointer set below — points at the vector slot, same caveat as
+    // DustEngine::window: a second window created later could reallocate
+    // `windows` and dangle it. Fine for the single-window-typical usage
+    // this engine is built around today; worth a real fix (stable storage,
+    // e.g. deque or unique_ptr per window) if/when multi-window becomes
+    // more than incidental.
+    if (stored.handle)
+        installInputCallbacks(stored.handle, &stored.input);
+
+    return stored;
 }
 
 
@@ -79,6 +91,11 @@ void WindowManager::updateAll() {
 }
 
 void WindowManager::pollEvents() {
+    // Clear last frame's edge-triggered state (keysPressed/Released, etc.)
+    // before the callbacks that populate this frame's run during
+    // glfwPollEvents() below.
+    for (auto& w : windows)
+        beginInputFrame(w.input);
     glfwPollEvents();
 }
 

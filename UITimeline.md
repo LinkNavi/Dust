@@ -55,8 +55,57 @@ after touching an importer.
 
 ---
 
-## Phase 3 — Input
+## Phase 3 — Input [DONE, pending one open report]
 Hover, click, and focus states per widget. Needs a hit-test pass after layout (walk the tree back-to-front, first widget whose rect contains the cursor wins), mouse button + release tracking, and a focused-widget concept for keyboard input. API additions: `.onClick()`, `.onHover()`, `.onFocus()` callbacks on `Widget`. Required before any interactive UI (hotbar clicks, inventory, buttons) is usable.
+
+One system, shared by the engine and DustUI — not two competing input paths.
+`isKeyDown()`/`isMouseButtonDown()`/etc. on `DustEngine` are capture-aware by
+default: a focused UI widget (a text box) makes them report nothing at all
+for real gameplay code, no manual "am I typing" check needed at each call
+site. `ignoreUICapture=true` bypasses it for the rare case that needs to
+(the widget system itself, or a pause-menu Escape key).
+
+- [x] `Core/Input.hpp/.cpp` — raw per-window state (key/mouse down + edge-
+      triggered pressed/released, mouse pos/delta, scroll, UTF-8 typed
+      text) populated via GLFW callbacks (not polling, so fast taps between
+      frames aren't missed), wired into `WindowManager`.
+- [x] `DustEngine` query API — `isKeyDown/Pressed/Released`,
+      `isMouseButtonDown/Pressed/Released`, `mousePosition/Delta`,
+      `mouseScrollY`, `typedTextThisFrame`, `uiWantsMouse()`/
+      `uiWantsKeyboard()`. Key/button codes are plain GLFW constants —
+      consistent with the rest of Dust not hiding its backends.
+- [x] `Widget::onClick()/onHover()/onFocus()` — setting any of them makes a
+      widget hit-testable; only `onFocus()` also makes it *focusable*.
+      `onHover()`/`onFocus()` are level-triggered (fire every frame the
+      condition holds); `onClick()` is the one genuinely edge-triggered case
+      (full press+release over the same widget). Identity across frames
+      (needed since the tree is rebuilt from scratch every frame) is an
+      *implicit* path-hash id — parent id + child index — computed during
+      `layout()`. No `.id()` override exists yet; a widget that reorders
+      itself among siblings (a sortable list) would need one — fine for the
+      fixed-layout HUD style UI everything's built for today.
+- [x] `DustEngine::endUI()` — hit-test pass right after `layout()`, before
+      the render walks: last widget under the cursor in tree order wins
+      (children draw over parents, so "last" = "topmost"). Click sets focus
+      only if the hit widget is focusable; clicking anything else (a
+      non-focusable widget, or empty space) blurs.
+- [x] Runtime demo — hotbar slots are clickable (`.onClick` picks the active
+      slot) and hoverable (`.onHover` brightens the border); a chat-box-style
+      widget is focusable, and while focused a simulated "player moves
+      forward" log (on W) goes quiet — the concrete "movement vs. text box"
+      proof this phase was built for. Verified against the real GPU via
+      synthesized X11 input (python-xlib/XTEST) at 1280x720.
+
+**Open report, not yet reproduced:** on at least one real desktop (Hyprland,
+window auto-tiled/resized larger than the requested 1280x720), every
+bottom-anchored widget (health bar, hotbar, chat box) is invisible, while
+top- and center-anchored ones render fine. Verified `resolveAnchor()`'s
+`BottomLeft/Center/Right` math directly and it's correct; reproduced a
+1280x720 *and* an artificially-large Xvfb window here with no issue — so the
+anchor logic itself isn't the suspect. Sandbox has no tiling WM, so the
+actual resize-under-Hyprland path can't be reproduced here. Added a one-time
+`window size: WxH` log in Runtime to compare what DustUI thinks the viewport
+is against what's actually on screen — next step once that's available.
 
 ---
 

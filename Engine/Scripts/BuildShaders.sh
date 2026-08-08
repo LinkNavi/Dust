@@ -6,9 +6,6 @@ SHADER_DIR="$ENGINE_DIR/Shaders"
 
 echo "Building shaders..."
 
-# embed_pair <vert> <frag> <out_header>
-# Compiles vert/frag to SPIR-V and embeds both as byte arrays in out_header,
-# named "<stem>_vert_spv"/"<stem>_frag_spv" to match what Renderer.cpp expects.
 embed_pair() {
     local vert="$1" frag="$2" out="$3"
 
@@ -33,9 +30,6 @@ embed_pair() {
     echo "Done → $out"
 }
 
-# embed_comp <comp> <out_header>
-# Compiles a compute shader to SPIR-V and embeds it as a byte array in out_header,
-# named "<stem>_comp_spv".
 embed_comp() {
     local comp="$1" out="$2"
 
@@ -53,11 +47,10 @@ embed_comp() {
     echo "Done → $out"
 }
 
-# Pipeline Shader Pairs
-embed_pair default default "$ENGINE_DIR/include/Core/Rendering/DefaultShaders.hpp"
-embed_pair ui      ui      "$ENGINE_DIR/include/Core/UI/UIShaders.hpp"
-embed_pair text    text    "$ENGINE_DIR/include/Core/UI/TextShaders.hpp"
-embed_pair particle particle    "$ENGINE_DIR/include/Core/UI/TextShaders.hpp"
+embed_pair default   default   "$ENGINE_DIR/include/Core/Rendering/DefaultShaders.hpp"
+embed_pair ui        ui        "$ENGINE_DIR/include/Core/UI/UIShaders.hpp"
+embed_pair text      text      "$ENGINE_DIR/include/Core/UI/TextShaders.hpp"
+embed_pair particle  particle  "$ENGINE_DIR/include/Core/Rendering/ParticleShaders.hpp"
+embed_pair billboard billboard "$ENGINE_DIR/include/Core/Rendering/BillboardShaders.hpp"
 
-# Compute Shaders
 embed_comp particles "$ENGINE_DIR/include/Core/Rendering/ParticleComputeShaders.hpp"
