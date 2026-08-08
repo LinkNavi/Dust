@@ -1,5 +1,6 @@
 Runtime/zora-deps/
 Engine/zora-deps/
+Engine/zora-build/
 DustPacker/zora-deps/
 ECS/zora-deps/
 *.pack
