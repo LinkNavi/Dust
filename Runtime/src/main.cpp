@@ -3,6 +3,8 @@
 // end to end. Run with `zora run Runtime`.
 #include "DustEngine.hpp"
 #include "Log.hpp"
+#include "Core/UI/PulseShader.hpp"
+#include "Core/UI/HealthBarShader.hpp"
 #include <cstdio>
 #include <cmath>
 
@@ -89,6 +91,12 @@ int main() {
         });
     }
 
+    // Custom UI shader (UITimeline.md Phase 9) — fragment shader only, pairs
+    // with the engine's ui.vert. ui_pulse_frag_spv is baked in by
+    // BuildShaders.sh from Engine/Shaders/ui_pulse.frag.
+    VkPipeline pulseShader     = e.loadUIShader((const uint32_t*)ui_pulse_frag_spv, ui_pulse_frag_spv_len);
+    VkPipeline healthBarShader = e.loadUIShader((const uint32_t*)ui_healthbar_frag_spv, ui_healthbar_frag_spv_len);
+
     // ── Camera ── pulled back far enough to frame all four objects in a row
     Dust::Camera camera;
     camera.position = { 0.0f, 2.0f, 10.0f };
@@ -104,8 +112,21 @@ int main() {
     // frame, so nothing here can live on a Widget instance.
     int         activeSlot  = 0;     // which hotbar slot .onClick() last selected
     int         hoveredSlot = -1;    // which slot .onHover() saw this frame, -1 = none
+    int         selectedRow = 0;     // which row of the clipped list was last clicked
+    int         sinkChoice  = 0;     // which kitchen-sink Button is active
     bool        chatFocused = false; // whether the chat box currently holds keyboard focus
     std::string chatText;
+
+    // Component demo state — all caller-owned, since DustUI is immediate mode
+    // and a component that stored this itself couldn't be rebuilt each frame.
+    int   activeTab   = 0;
+    int   dropdownSel = 0;
+    bool  dropdownOpen = false;
+    bool  modalOpen    = false;
+    float panelX = 340.0f, panelY = 120.0f; // dragged window position
+    std::vector<Dust::UI::Toast> toasts;
+    static const char* kOptions[] = { "Fireball", "Ice Shard", "Chain Lightning", "Meteor", "Heal" };
+    static const char* kTabs[]    = { "Stats", "Gear", "Skills" };
 
     while (!e.shouldClose()) {
         t        += e.deltaTime();
@@ -152,16 +173,31 @@ int main() {
 
             auto& ui = e.beginUI();
 
-            // Health Bar — DustUI-API.md "Real Examples", plus a label to
-            // exercise text sitting inside a Row alongside another widget.
-            ui.child(Dust::UI::Row()
-                .size(Dust::px(200), Dust::px(20))
-                .background(Dust::Colors::DarkRed)
-                .border(Dust::px(2), Dust::Colors::White, Dust::px(4))
+            // Z-ordering + layers (Phases 8/10) — declared *before* the
+            // widgets it covers, but Layer::Overlay sorts it last, so it
+            // draws over them. Without it this would be painted first and
+            // vanish under the hotbar.
+            ui.child(Dust::UI::Widget()
+                .size(Dust::px(220), Dust::px(28))
+                .background(Dust::Color{ 0.1f, 0.1f, 0.1f, 0.85f })
+                .border(Dust::px(1), Dust::Colors::Gold, Dust::px(6))
+                .anchor(Dust::UI::Anchor::BottomCenter, Dust::px(0), Dust::px(-120))
+                .padding(Dust::px(0), Dust::px(10))
+                .setLayer(Dust::UI::Layer::Overlay)
+                .text("Overlay layer — draws on top", Dust::px(12), Dust::Colors::White));
+
+            // Health Bar — a dog-leg bar (------\________) drawn entirely by
+            // ui_healthbar.frag on one quad. A nested-widget version can't do
+            // this: the fill would have to be the same rectangle as the
+            // track. Params are fill fraction, where the bend starts (0..1
+            // across the width), thickness px, drop px. .background() is the
+            // filled colour, the border colour is the empty track.
+            ui.child(Dust::UI::Widget()
+                .size(Dust::px(260), Dust::px(38))
+                .background(Dust::Colors::Red)
+                .border(Dust::px(0), Dust::Colors::DarkRed, Dust::px(0))
                 .anchor(Dust::UI::Anchor::BottomCenter, Dust::px(0), Dust::px(-70))
-                .child(Dust::UI::Widget()
-                    .size(Dust::pct(playerHpPct), Dust::pct(1.0f))
-                    .background(Dust::Colors::Red)));
+                .shader(healthBarShader, playerHpPct, 0.5f, 10.0f, 18.0f));
 
             // Name Tag — real text now, centered in the box by endUI()'s
             // vertical-centering rule (see DustEngine::endUI()).
@@ -208,22 +244,167 @@ int main() {
             }
             ui.child(hotbar);
 
-            // Chat box — the concrete "movement vs. text box" proof: click
-            // it to focus, then type. While focused, isKeyDown()/
-            // isKeyPressed() report no keys at all by default (see
-            // DustEngine::isKeyDown()'s doc comment), so the simulated
-            // "player movement" below goes quiet even though WASD is still
-            // physically held — no manual "am I typing" check needed at the
-            // call site, that's the whole point of a unified input system.
+            // Kitchen sink — one panel exercising the widget features that
+            // aren't a whole phase on their own: gradient fill, drop shadow,
+            // per-corner radii, text alignment/wrapping/outline, margins,
+            // justify/align on a Row, and the Panel/Label/Button/ProgressBar
+            // component helpers.
+            ui.child(Dust::UI::Panel(Dust::Color{ 0.10f, 0.11f, 0.14f, 0.94f })
+                .size(Dust::px(300), Dust::px(250))
+                .anchor(Dust::UI::Anchor::CenterLeft, Dust::px(20), Dust::px(0))
+                .corners(Dust::px(16), Dust::px(4), Dust::px(16), Dust::px(4))
+                .shadow(Dust::Colors::Black.alpha(0.6f), 10.0f, 0.0f, 4.0f)
+                .padding(Dust::px(12))
+                .child(Dust::UI::Column()
+                    .gap(Dust::px(8))
+                    // Text gradient runs across the whole string, not per
+                    // glyph — 90deg is CSS's left→right.
+                    .child(Dust::UI::Label("Kitchen Sink", Dust::px(20))
+                        .align(Dust::UI::HAlign::Center)
+                        .size(Dust::pct(1.0f), Dust::px(26))
+                        .textGradient(Dust::Colors::Gold, Dust::Colors::Cyan, Dust::UI::degrees(90.0f))
+                        .textOutline(Dust::px(2.0f), Dust::Colors::Black))
+                    // Gradient + wrapped, justified body text.
+                    .child(Dust::UI::Widget()
+                        .size(Dust::pct(1.0f), Dust::px(66))
+                        .gradient(Dust::Colors::DarkBlue, Dust::Colors::Purple, Dust::UI::degrees(135.0f))
+                        .border(Dust::px(2), Dust::Colors::Gray, Dust::px(6))
+                        .borderGradient(Dust::Colors::Cyan, Dust::Colors::Purple, Dust::UI::degrees(45.0f))
+                        .padding(Dust::px(6))
+                        .text("Gradient fill, word wrap, and a per-glyph outline all on one widget.",
+                              Dust::px(12), Dust::Colors::White)
+                        .wrap()
+                        .align(Dust::UI::HAlign::Left, Dust::UI::VAlign::Top)
+                        .textOutline(Dust::px(1.0f), Dust::Colors::Black))
+                    // Row with SpaceBetween + centred cross axis, and a
+                    // margin on the middle child pushing it off its neighbours.
+                    .child(Dust::UI::Row()
+                        .size(Dust::pct(1.0f), Dust::px(34))
+                        .justifyContent(Dust::UI::Justify::SpaceBetween)
+                        .align(Dust::UI::AlignItems::Center)
+                        .child(Dust::UI::Button("One", [&](){ sinkChoice = 0; }, sinkChoice == 0, Dust::px(74), Dust::px(28)))
+                        .child(Dust::UI::Button("Two", [&](){ sinkChoice = 1; }, sinkChoice == 1, Dust::px(74), Dust::px(28))
+                            .margin(Dust::px(0), Dust::px(6)))
+                        .child(Dust::UI::Button("Three", [&](){ sinkChoice = 2; }, sinkChoice == 2, Dust::px(74), Dust::px(28))))
+                    .child(Dust::UI::ProgressBar(playerHpPct, Dust::pct(1.0f), Dust::px(14)))
+                    // Pill via per-corner radii, right-aligned text.
+                    .child(Dust::UI::Widget()
+                        .size(Dust::pct(1.0f), Dust::px(24))
+                        .background(Dust::Colors::DarkGold)
+                        .corners(Dust::px(12), Dust::px(12), Dust::px(12), Dust::px(12))
+                        .padding(Dust::px(0), Dust::px(10))
+                        .text("right-aligned pill", Dust::px(12), Dust::Colors::White)
+                        .align(Dust::UI::HAlign::Right))));
+
+            // Sprite (Phase 5) — a texture inside a widget rect, sharing the
+            // descriptor set the particle system already uses. No
+            // .background() means no tint; the border/radius still come from
+            // the same rounded-rect SDF, so sprites round off with the box.
             ui.child(Dust::UI::Widget()
-                .size(Dust::px(320), Dust::px(30))
-                .background(Dust::Colors::DarkGray)
-                .border(Dust::px(2), chatFocused ? Dust::Colors::Cyan : Dust::Colors::Gray, Dust::px(4))
-                .anchor(Dust::UI::Anchor::BottomLeft, Dust::px(10), Dust::px(-24))
-                .padding(Dust::px(0), Dust::px(8))
-                .onFocus([&chatFocused]() { chatFocused = true; })
-                .text(chatText.empty() ? "Click, then type (WASD works normally until you do)" : chatText.c_str(),
-                     Dust::px(13), chatText.empty() ? Dust::Colors::Gray : Dust::Colors::White));
+                .size(Dust::px(96), Dust::px(96))
+                .border(Dust::px(2), Dust::Colors::White, Dust::px(12))
+                .anchor(Dust::UI::Anchor::TopLeft, Dust::px(20), Dust::px(20))
+                .sprite(sonicSet));
+
+            // Clipping + scrolling (Phases 6/7) — a fixed-size window over a
+            // Column taller than it is. Mouse wheel over it scrolls; rows get
+            // cut off mid-glyph at both edges (the clip applies to text as
+            // well as fills), and a clipped-away row can't be clicked.
+            Dust::UI::Widget list = Dust::UI::Column().gap(Dust::px(4));
+            for (int i = 0; i < 8; i++) {
+                bool sel = (i == selectedRow);
+                list.child(Dust::UI::Widget()
+                    .size(Dust::px(160), Dust::px(26))
+                    .background(sel ? Dust::Colors::DarkGold : Dust::Colors::DarkGray)
+                    .border(Dust::px(1), Dust::Colors::Gray, Dust::px(3))
+                    .padding(Dust::px(0), Dust::px(8))
+                    .onClick([&selectedRow, i]() { selectedRow = i; })
+                    .text(("Item " + std::to_string(i + 1)).c_str(), Dust::px(13), Dust::Colors::White));
+            }
+            ui.child(Dust::UI::Widget()
+                .size(Dust::px(176), Dust::px(120))
+                .background(Dust::Colors::Black)
+                .border(Dust::px(2), Dust::Colors::White, Dust::px(6))
+                .anchor(Dust::UI::Anchor::CenterRight, Dust::px(-20), Dust::px(0))
+                .padding(Dust::px(8))
+                .scroll()
+                .child(list));
+
+            // Custom shader widget (Phase 9) — same instance buffer, same
+            // batch path, different fragment shader. params: time, speed,
+            // ring count. fill/border act as the two gradient endpoints.
+            if (pulseShader != VK_NULL_HANDLE) {
+                ui.child(Dust::UI::Widget()
+                    .size(Dust::px(110), Dust::px(110))
+                    .background(Dust::Colors::Cyan)
+                    .border(Dust::px(0), Dust::Colors::DarkGold, Dust::px(55))
+                    .anchor(Dust::UI::Anchor::TopRight, Dust::px(-20), Dust::px(20))
+                    .shader(pulseShader, t, 4.0f, 3.0f));
+            }
+
+            // Chat box — now the TextInput component. Same "movement vs. text
+            // box" proof as before: click it to focus, then type. While
+            // focused, isKeyDown()/isKeyPressed() report no keys at all by
+            // default, so the simulated "player movement" below goes quiet
+            // even though WASD is still physically held.
+            ui.child(Dust::UI::TextInput(chatText, chatFocused,
+                                         "Click, then type (WASD works normally until you do)",
+                                         Dust::px(320), Dust::px(30))
+                .anchor(Dust::UI::Anchor::BottomLeft, Dust::px(10), Dust::px(-24)));
+
+            // Tooltip — built only on the frames it should be visible, which
+            // is immediate mode's answer to show/hide. Overlay layer, so it
+            // floats over the hotbar it describes.
+            if (hoveredSlot >= 0) {
+                ui.child(Dust::UI::Tooltip(("Slot " + std::to_string(hoveredSlot + 1) + " — click to equip").c_str())
+                    .size(Dust::px(210), Dust::px(26))
+                    .anchor(Dust::UI::Anchor::BottomCenter, Dust::px(0), Dust::px(-140)));
+            }
+
+            // Draggable window — the title bar's .onDrag() adds the frame's
+            // mouse delta to the caller's x/y. Contains a tabbed panel.
+            {
+                Dust::UI::Widget body = Dust::UI::Column().size(Dust::pct(1.0f), Dust::px(120)).padding(Dust::px(8));
+                body.child(Dust::UI::Tabs(kTabs, 3, activeTab, Dust::px(64), Dust::px(24)));
+                const char* tabBody = activeTab == 0 ? "STR 14   DEX 11   INT 18"
+                                    : activeTab == 1 ? "Sword of Testing +2"
+                                                     : "Fireball, Blink, Mend";
+                body.child(Dust::UI::Widget()
+                    .size(Dust::pct(1.0f), Dust::px(60))
+                    .background(Dust::Colors::Black.alpha(0.35f))
+                    .corners(Dust::px(0), Dust::px(6), Dust::px(6), Dust::px(6))
+                    .padding(Dust::px(8))
+                    .text(tabBody, Dust::px(12), Dust::Colors::LightGray)
+                    .wrap()
+                    .align(Dust::UI::HAlign::Left, Dust::UI::VAlign::Top));
+                ui.child(Dust::UI::Draggable("Drag me", panelX, panelY, std::move(body),
+                                             Dust::px(230), Dust::px(150)));
+            }
+
+            // Dropdown + image button + the button that opens the modal.
+            ui.child(Dust::UI::Row()
+                .gap(Dust::px(8))
+                .align(Dust::UI::AlignItems::Center)
+                .anchor(Dust::UI::Anchor::TopRight, Dust::px(-20), Dust::px(150))
+                .child(Dust::UI::ImageButton(sonicSet, [&]() {
+                        toasts.push_back({ "Sprite button clicked", 2.5f });
+                    }, Dust::px(40)))
+                .child(Dust::UI::Dropdown(kOptions, 5, dropdownSel, dropdownOpen, Dust::px(150)))
+                .child(Dust::UI::Button("Modal", [&]() { modalOpen = true; }, false,
+                                        Dust::px(80), Dust::px(26))));
+
+            // Toasts — ticked and rebuilt in one call so one can't outlive
+            // its timer by a frame.
+            ui.child(Dust::UI::Toasts(toasts, e.deltaTime())
+                .anchor(Dust::UI::Anchor::TopCenter, Dust::px(0), Dust::px(60)));
+
+            // Modal — the scrim's .blockInput() makes everything drawn before
+            // it unclickable, so nothing behind needs to know it exists.
+            if (modalOpen) {
+                ui.child(Dust::UI::ModalDialog(
+                    "Confirm", "Input to everything behind this dialog is blocked by the scrim, not by the caller.",
+                    "Got it", [&]() { modalOpen = false; toasts.push_back({ "Modal dismissed", 2.0f }); }));
+            }
 
             hoveredSlot = -1; // see comment above — must run after the widgets that read it, before endUI()'s hit-test can set it fresh
             chatFocused = false; // same idea: endUI() sets this back to true this frame iff the chat box is still actually focused
@@ -233,11 +414,7 @@ int main() {
             // Everything below reads input *after* endUI() so uiWantsKeyboard()/
             // uiWantsMouse() reflect this frame's freshly-computed hit-test,
             // not last frame's.
-            if (e.uiWantsKeyboard()) {
-                chatText += e.typedTextThisFrame(); // raw — always available regardless of capture, meant for whoever's focused to read
-                if (e.isKeyPressed(GLFW_KEY_BACKSPACE, /*ignoreUICapture=*/true) && !chatText.empty())
-                    chatText.pop_back();
-            }
+            e.editFocusedText(chatText); // no-op unless a focusable widget holds focus
             if (e.isKeyPressed(GLFW_KEY_W)) Dust::log("(sim) player moves forward — uiWantsKeyboard()=", e.uiWantsKeyboard());
         e.endDrawing();
     }

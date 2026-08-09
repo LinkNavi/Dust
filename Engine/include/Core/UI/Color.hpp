@@ -9,6 +9,17 @@ namespace Dust {
 struct Color {
     float r = 1.0f, g = 1.0f, b = 1.0f, a = 1.0f;
 
+    // Same colour, different alpha — reads better than respelling the
+    // literal, and keeps the Colors:: constants usable for overlays.
+    constexpr Color alpha(float a_) const { return { r, g, b, a_ }; }
+
+    // Component-wise blend, t in 0..1. Handy for hover/press tints, or for
+    // driving a colour off a gameplay value.
+    static constexpr Color lerp(const Color& a, const Color& b, float t) {
+        return { a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t,
+                 a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t };
+    }
+
     static Color fromHex(uint32_t hex) {
         // 0xRRGGBBAA
         return {

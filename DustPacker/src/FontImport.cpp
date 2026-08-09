@@ -22,12 +22,15 @@ namespace {
 // it's a resolution/atlas-size tradeoff, not a hard limit like a bitmap font.
 constexpr double kPixelsPerEm = 48.0;
 // Distance field falloff width, in atlas pixels — matches msdf-atlas-gen's
-// usual default. The shader (text.frag) needs this exact value to convert
+// usual default is 4; widened here so per-glyph outlines (Widget::textOutline)
+// have valid distance to threshold against — the usable outline width is
+// about half this, minus the fill's own 1px of antialiasing. The shader
+// (text.frag) needs this exact value to convert
 // sampled distance back into screen-space coverage.
-constexpr double kPxRange = 4.0;
+constexpr double kPxRange = 12.0;
 // Padding around each glyph's tight ink bounds so the falloff has room to
 // breathe without bumping into a neighboring glyph in the atlas.
-constexpr int kPadPx = 4;
+constexpr int kPadPx = 12;
 // Fixed atlas width — height is however tall the shelf packer ends up
 // needing for this glyph set, no wasted rows.
 constexpr int kAtlasWidth = 512;

@@ -99,4 +99,86 @@ float layoutText(const Font& font, const std::string& text, float sizePx, Color 
     return cursorX;
 }
 
+float measureText(const Font& font, const std::string& text, float sizePx) {
+    float w = 0.0f;
+    for (unsigned char c : text) {
+        if (c == '\n') continue;
+        auto it = font.glyphs.find((uint32_t)c);
+        if (it != font.glyphs.end()) w += it->second.advance * sizePx;
+    }
+    return w;
+}
+
+void wrapText(const Font& font, const std::string& text, float sizePx, float wrapWidth,
+              std::vector<std::string>& outLines) {
+    outLines.clear();
+
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t nl = text.find('\n', start);
+        std::string paragraph = text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+
+        if (wrapWidth <= 0.0f) {
+            outLines.push_back(paragraph);
+        } else {
+            // Greedy word wrap: keep adding words while they fit, break when
+            // one doesn't. Words wider than the box on their own get a line
+            // to themselves and overflow it rather than being split.
+            std::string line;
+            size_t wordStart = 0;
+            while (wordStart <= paragraph.size()) {
+                size_t sp = paragraph.find(' ', wordStart);
+                std::string word = paragraph.substr(wordStart, sp == std::string::npos ? std::string::npos : sp - wordStart);
+
+                std::string candidate = line.empty() ? word : line + " " + word;
+                if (!line.empty() && measureText(font, candidate, sizePx) > wrapWidth) {
+                    outLines.push_back(line);
+                    line = word;
+                } else {
+                    line = candidate;
+                }
+
+                if (sp == std::string::npos) break;
+                wordStart = sp + 1;
+            }
+            outLines.push_back(line);
+        }
+
+        if (nl == std::string::npos) break;
+        start = nl + 1;
+    }
+}
+
+void layoutTextBox(const Font& font, const std::string& text, float sizePx, Color color,
+                   const Rect& box, HAlign hAlign, VAlign vAlign, float wrapWidth,
+                   std::vector<GlyphInstance>& out) {
+    std::vector<std::string> lines;
+    wrapText(font, text, sizePx, wrapWidth, lines);
+    if (lines.empty()) return;
+
+    float lineH     = font.lineHeight * sizePx;
+    float emHeight  = (font.ascender - font.descender) * sizePx;
+    // Block height is the em box of the first line plus a full line advance
+    // for each one after it — using lineHeight for all of them would leave
+    // the block bottom-heavy by the leading of the last line.
+    float blockH    = emHeight + lineH * (float)(lines.size() - 1);
+
+    float topY = box.y;
+    if (vAlign == VAlign::Middle) topY = box.y + (box.h - blockH) * 0.5f;
+    else if (vAlign == VAlign::Bottom) topY = box.y + box.h - blockH;
+
+    float baselineY = topY + font.ascender * sizePx;
+
+    for (const std::string& line : lines) {
+        float x = box.x;
+        if (hAlign != HAlign::Left) {
+            float lineW = measureText(font, line, sizePx);
+            x = (hAlign == HAlign::Center) ? box.x + (box.w - lineW) * 0.5f
+                                           : box.x + box.w - lineW;
+        }
+        layoutText(font, line, sizePx, color, x, baselineY, out);
+        baselineY += lineH;
+    }
+}
+
 } // namespace Dust::UI

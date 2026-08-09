@@ -85,14 +85,14 @@
   },
   {
     "directory": "/home/link/Programming/Dust/Engine",
-    "file": "/home/link/Programming/Dust/Engine/src/Core/UI/Font.cpp",
-    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include -I/home/link/Programming/Dust/Engine/../AssetManager/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include/msdfgen -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Font.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/UI/Font.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Font.cpp.o",
-    "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Font.cpp.o"
-  },
-  {
-    "directory": "/home/link/Programming/Dust/Engine",
     "file": "/home/link/Programming/Dust/Engine/src/Core/UI/Widget.cpp",
     "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include -I/home/link/Programming/Dust/Engine/../AssetManager/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include/msdfgen -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Widget.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/UI/Widget.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Widget.cpp.o",
     "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Widget.cpp.o"
+  },
+  {
+    "directory": "/home/link/Programming/Dust/Engine",
+    "file": "/home/link/Programming/Dust/Engine/src/Core/UI/Font.cpp",
+    "command": "clang++ -std=c++23 -pipe -I/home/link/Programming/Dust/Engine/include -I/home/link/Programming/Dust/Engine/../ECS/include -I/home/link/Programming/Dust/Engine/../AssetManager/include   -I/home/link/Programming/Dust/Engine/zora-deps/vk-bootstrap/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/VulkanMemoryAllocator/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/vulkan-headers/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include -I/home/link/Programming/Dust/Engine/zora-deps/msdfgen/zora-install/include/msdfgen -MMD -MF /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Font.cpp.d -c /home/link/Programming/Dust/Engine/src/Core/UI/Font.cpp -o /home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Font.cpp.o",
+    "output": "/home/link/Programming/Dust/Engine/zora-build/Engine/src/Core/UI/Font.cpp.o"
   }
 ]

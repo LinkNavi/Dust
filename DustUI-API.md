@@ -107,11 +107,71 @@ UI::Widget()
     .child(UI::Widget()...);                      // nest children inside
 ```
 
+### Everything else a Widget can do
+
+```cpp
+UI::Widget()
+    // ── size & spacing ──
+    .minSize(px(80), px(0)).maxSize(px(240), px(0))  // clamps; px(0) max = unbounded
+    .margin(px(6))                                    // outside spacing — same 1/2/4-arg forms as padding
+
+    // ── fill ──
+    .gradient(Colors::DarkBlue, Colors::Purple, degrees(135))  // fill gradient
+    .borderGradient(Colors::Cyan, Colors::Purple, degrees(45)) // border gradient, own angle
+    .textGradient(Colors::Gold, Colors::Cyan, degrees(90))     // across the whole text block
+    .sprite(texSet, 0, 0, 1, 1)                        // texture (+ optional UV sub-rect)
+    .shadow(Colors::Black.alpha(0.6f), 10.0f, 0, 4)    // colour, blur px, dx, dy
+    .corners(px(16), px(4), px(16), px(4))             // per-corner radius: TL, TR, BR, BL
+
+    // ── text ──
+    .align(HAlign::Center, VAlign::Middle)             // inside the padded content box
+    .wrap()                                            // word wrap to the content width
+    .textOutline(px(2), Colors::Black)                 // per-glyph outline
+
+    // ── behaviour ──
+    .clip()                                            // clip descendants to the content box
+    .scroll()                                          // wheel-scrollable (implies .clip())
+    .z(10).setLayer(Layer::Overlay)                    // draw order: layer first, then z
+    .id(0xBEEF)                                        // pin identity across reorders
+    .shader(pipeline, p0, p1, /*...*/ p7)              // custom fragment shader
+    .onPress(fn).onRelease(fn).onClick(fn).onHover(fn).onFocus(fn);
+```
+
+Notes worth knowing:
+
+- A `px(0)` size means **auto** — the widget sizes itself to its children. That's
+  why an un-sized `Row()` anchored to an edge used to vanish.
+- `.textOutline()` is limited by the font atlas's baked distance range
+  (`kPxRange` in DustPacker's `FontImport.cpp`); asking for more than about
+  half of it is clamped rather than degrading into a box around each glyph.
+- `.id()` matters for any list that reorders or conditionally inserts items —
+  without it, identity follows the *slot*, so hover/focus/scroll state jumps
+  to whatever moved into that position.
+- `UI::degrees()` converts a CSS-style gradient angle (0 = up, 90 = right,
+  clockwise) into the radians the shaders want. Every gradient — fill, border,
+  text — takes the same convention, and a custom shader can read the same
+  angle out of its params.
+- Draw order is a sort on the flattened quad list, not on the tree: `.z()` and
+  `.setLayer()` never move a widget in a `Row`, never change its id, and lift
+  its text along with its background.
+
 ---
 
 ## Layouts
 
 Layouts are widgets that arrange children automatically.
+
+`Row`/`Column` also take distribution and alignment, both of which need the
+container to have an explicit size — an auto-sized one is exactly as big as
+its children, so there is nothing left over to distribute:
+
+```cpp
+UI::Row()
+    .size(pct(1.0f), px(34))
+    .justifyContent(Justify::SpaceBetween)  // Start, Center, End, SpaceBetween, SpaceAround
+    .align(AlignItems::Center)              // Start, Center, End, Stretch
+    .gap(px(8));
+```
 
 ### Row — horizontal
 
@@ -144,6 +204,51 @@ UI::Stack()
 ```
 
 Children in a Stack anchor relative to the Stack widget.
+
+---
+
+## Interactive components
+
+Everything below lives in `Core/UI/Components.hpp`. DustUI is immediate mode,
+so none of them own state — anything that persists (is this open? what's
+typed?) is a reference the caller keeps, which also makes saving/restoring UI
+state just saving those variables.
+
+```cpp
+UI::Tooltip("Click to equip");                        // build it only on frames it should show
+UI::ModalDialog("Confirm", body, "OK", onConfirm);    // scrim blocks input to everything behind
+UI::Dropdown(options, count, selected, open);         // clipped, scrollable option list
+UI::ImageButton(texSet, onClick);                     // sprite + click
+UI::TextInput(buffer, focused, "placeholder");        // pair with engine.editFocusedText(buffer)
+UI::Tabs(labels, count, activeTab);                   // writes the active index
+UI::Draggable("Title", x, y, std::move(body));        // title bar drags, writes x/y
+UI::Toasts(toastVector, deltaTime);                   // ticks timers and builds the survivors
+```
+
+Two of them lean on primitives worth knowing about on their own:
+
+- **`.blockInput()`** — the widget swallows input aimed at anything drawn
+  before it. That's the whole modal mechanism: nothing behind a dialog needs
+  to know the dialog exists. Its own children come later in the walk, so they
+  stay live.
+- **`.onDrag(fn)`** — fires every frame the mouse is held after pressing this
+  widget, with the frame's delta. It keeps firing even once the cursor
+  outruns the widget, which is what makes dragging survive a fast mouse.
+
+---
+
+## Built-in components
+
+Shipped in `Core/UI/Widget.hpp` — nothing privileged, just the builder calls
+you'd otherwise write inline, and each one stays chainable:
+
+```cpp
+UI::Label("Kitchen Sink", px(20));                 // auto-sized text
+UI::Panel();                                        // rounded, bordered, padded container
+UI::Button("Start", []{ ... }, isActive);           // centred label + onClick
+UI::ProgressBar(0.6f, px(200), px(16));             // track + fill child
+UI::Spacer(px(12));                                 // fixed gap in a Row/Column
+```
 
 ---
 

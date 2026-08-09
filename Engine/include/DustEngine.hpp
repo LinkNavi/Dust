@@ -11,9 +11,11 @@
 #include "Core/Rendering/Texture.hpp"
 #include "Core/Rendering/ParticleSystem.hpp"
 #include "Core/UI/Widget.hpp"
+#include "Core/UI/Components.hpp"
 #include "AssetManager/AssetManager.hpp"
 #include <functional>
 #include <list>
+#include <unordered_map>
 #include <string>
 #include <glm/glm.hpp>
 
@@ -150,6 +152,20 @@ struct DustEngine {
     UI::Widget& beginUI();
     void        endUI();
 
+    // Builds a custom UI shader (UITimeline.md Phase 9) from SPIR-V and
+    // returns the pipeline handle to hand to Widget::shader(). The bytes are
+    // a *fragment* shader only — it pairs with the stock ui.vert and must
+    // declare the same input interface (see Shaders/ui_pulse.frag for a
+    // working example, embedded as ui_pulse_frag_spv). Returns
+    // VK_NULL_HANDLE on failure; the renderer owns and destroys the pipeline.
+    VkPipeline loadUIShader(const uint32_t* fragSpv, size_t fragSpvLen);
+
+    // Applies this frame's typed characters and backspaces to `buffer` if a
+    // focusable widget currently holds keyboard focus. Call after endUI() —
+    // that's what computes the focus for this frame. maxLength 0 = unbounded.
+    // UI::TextInput() pairs with this; see Core/UI/Components.hpp.
+    void editFocusedText(std::string& buffer, size_t maxLength = 0);
+
     // One font, shared by every .text() widget — DustUI-API.md's .text()
     // call has no per-widget font selection, and MSDF means one atlas
     // already renders crisply at any size, so there's nothing to gain yet
@@ -211,6 +227,35 @@ private:
     UI::Font   uiFont;
     bool       uiFontLoaded = false;
 
+    // This frame's flattened widget quads and last frame's, kept as members
+    // so neither allocates per frame. Comparing them is the Phase 4 diff:
+    // identical means the mapped instance buffer already holds the right
+    // data and the upload can be skipped.
+    // One entry per run of quads or glyphs a single widget produced, tagged
+    // with the depth key it inherited. Sorting these — rather than the widget
+    // tree — is what makes layers work without perturbing layout.
+    struct UIDrawItem {
+        uint64_t depthKey;
+        bool     isText;
+        uint32_t first;  // index into uiRects / uiGlyphs
+        uint32_t count;
+    };
+
+    // All kept as members so none of them allocate per frame.
+    std::vector<UI::RectInstance>  uiRects;        // tree order
+    std::vector<UI::GlyphInstance> uiGlyphs;       // tree order
+    std::vector<UIDrawItem>        uiDrawItems;
+    std::vector<UI::RectInstance>  uiSortedRects;  // draw order — what actually gets uploaded
+    std::vector<UI::GlyphInstance> uiSortedGlyphs;
+    std::vector<UI::RectInstance>  uiPrevRects;    // last frame's, for the diff
+
+    // Scroll offset per scroll container, keyed by the widget's implicit
+    // path-hash id — the tree is rebuilt every frame, so this is the only
+    // place it can live. Entries are never pruned; a HUD has a handful of
+    // scroll views, not thousands.
+    std::unordered_map<uint64_t, float> uiScrollOffsets;
+    static constexpr float kUIScrollStepPx = 40.0f; // px per wheel notch
+
     // Persistent across frames on purpose — the Widget tree is rebuilt from
     // scratch every frame (immediate mode), so hover/focus/press state
     // can't live on a Widget instance. Identified by Widget's implicit
@@ -222,6 +267,10 @@ private:
 
     // Lazily-built compute pipeline for particle simulation
     VkPipelineLayout m_particleComputeLayout   = VK_NULL_HANDLE;
+    // Outlives the pipeline layout on purpose: a VkPipelineLayout keeps
+    // referencing the set layouts it was built from, and destroying them
+    // early invalidates it (only legal with the maintenance4 feature).
+    VkDescriptorSetLayout m_particleComputeSetLayout = VK_NULL_HANDLE;
     VkPipeline       m_particleComputePipeline = VK_NULL_HANDLE;
     bool             ensureComputePipeline();
 };

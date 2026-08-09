@@ -8,6 +8,12 @@ enum class Anchor {
     BottomLeft, BottomCenter, BottomRight,
 };
 
+// Where text sits inside its widget's content box. Lives here rather than in
+// Font.hpp so Widget.hpp can name it without pulling in the texture/atlas
+// machinery.
+enum class HAlign { Left, Center, Right };
+enum class VAlign { Top, Middle, Bottom };
+
 // Pixel rect — used both for layout basis (parent content box / viewport)
 // and for a widget's own computed position+size.
 struct Rect {

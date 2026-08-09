@@ -31,25 +31,48 @@ Entity System {
 Good Rendering {
     Full model loading via assimp [DONE] (offline, in DustPacker — fbx/gltf/glb/dae/stl/ply/3ds -> one binary format, multi-submesh + materials + textures)
     Texture + material support (base color) [DONE] — normal/metallic-roughness/emissive/occlusion maps are imported+uploaded but unused until there's a lit shader
-    Add a way to edit layers (hud layer, overlay layer, world layer, hand layer, etc)
+    Add a way to edit layers (hud layer, overlay layer, world layer, hand layer, etc) [PARTIAL] — UI side done (Background/HUD/Overlay, sorted on the flattened draw list so it never perturbs layout); world/hand layers still need the camera projection, see UITimeline.md Phase 10
     Dynamic textures (per face textures)
     Fog
     Bloom
-    Particle system
+    Particle system [DONE] — compute-simulated, instanced billboards, textured
     fast asf
 }
 
-Font System{
-    support multiple fonts
-    make one font instance support multiple sizes
+Feel {
+    Camera shake (trauma-based — one float, decays over time)
+    View punch (spring-return offset, separate from shake)
+    View bob (speed-scaled transform on camera)
+    FOV animation (runtime FOV curve/kick system)
+    Landing impact (camera dip on velocity threshold)
+    Decals (projected onto surfaces)
+    Sound occlusion (raycast-based audio muffling)
+    Screen effects (fullscreen flash, vignette — feeds your existing UI shader system)
+    Dynamic shadows (lit shader dependency)
 }
 
-UI {
-    Support Outlines
-    Support Rounded Corners
-    Support Sprites
-    Support Anchoring (a way to format ui no matter screen size, for example an element would anchor center then have an  offset based on the screen dimensions)
-    Support Immediate Mode rendering (live updating ui)
+Font System{
+    support multiple fonts — one shared font today; the atlas/descriptor-set plumbing is per-Font already, so this is mostly an API change on DustEngine
+    make one font instance support multiple sizes [DONE] — MSDF, one 48px/em atlas stays crisp at every size (per-glyph screenPxRange, so one batch can mix sizes)
+}
+
+UI (DustUI — see DustUI-API.md for the API, UITimeline.md for how it got built) {
+    Support Outlines [DONE] — widget borders, and per-glyph text outlines (needed widening the font atlas's baked distance range to have room to threshold in)
+    Support Rounded Corners [DONE] — SDF, per-corner radii
+    Support Sprites [DONE] — .sprite(texSet) with optional atlas sub-rect, tintable
+    Support Anchoring [DONE] — 9 anchors + offsets, resolved against the parent's content box; px/pct/vw/vh units
+    Support Immediate Mode rendering [DONE] — whole tree rebuilt each frame; identity is an implicit path hash, with .id() to pin it
+    Layout [DONE] — Row/Column/Stack, auto-size to children, padding/margin, min/max, gap, justify + align
+    Text [DONE] — MSDF, h/v alignment, word wrap, per-glyph outline + gradient
+    Gradients [DONE] — fill, border, and text, each with its own CSS-style angle
+    Drop shadows [DONE] — extra instance behind the widget, no extra draw call
+    Clipping + scrolling [DONE] — per-instance clip rect (not scissor, so it never splits a batch); wheel-driven scroll containers
+    Input [DONE] — hover/click/press/release/drag/focus, capture-aware so a focused text box silences gameplay input, .blockInput() for modals
+    Custom shader widgets [DONE] — fragment shader against the stock ui.vert, 8 free params per widget, still batched
+    Batching [DONE] — one instanced draw per pipeline/texture switch over a depth-sorted draw list; unchanged frames skip the upload
+    Components [DONE] — Label/Panel/Button/ProgressBar/Spacer + Tooltip/Modal/Dropdown/ImageButton/TextInput/Tabs/Draggable/Toast
+    World-space UI — the remaining half of the layers goal above
+    fast asf
 }
 
 Encrypted Asset System {

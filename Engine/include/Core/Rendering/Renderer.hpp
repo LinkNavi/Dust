@@ -8,6 +8,8 @@
 #include "Core/Rendering/DefaultShaders.hpp"
 #include "Core/UI/UIShaders.hpp"
 #include "Core/UI/Font.hpp"
+#include "Core/UI/RectInstance.hpp"
+#include "Core/Rendering/PipelineBuilder.hpp"
 #include <array>
 #include <vector>
 #include <glm/glm.hpp>
@@ -47,21 +49,47 @@ struct Renderer {
     // this when a model is unloaded.
     VkDescriptorSet createMaterialSet(VulkanContext& ctx, const Texture& tex);
 
-    // ── DustUI ── screen-space rounded-rect/border quads (see Core/UI/).
-    // No descriptor set — Phase 1 has no textures/text, just push-constant
-    // driven fills. One shared unit quad reused for every widget.
+    // ── DustUI ── screen-space rounded-rect/border/sprite quads (see
+    // Core/UI/). One shared unit quad, instanced once per widget, so the
+    // whole tree costs one draw call per texture switch rather than one per
+    // widget (UITimeline.md Phase 4).
     VkPipelineLayout uiLayout   = VK_NULL_HANDLE;
     VkPipeline       uiPipeline = VK_NULL_HANDLE;
     Mesh             uiQuad;
 
-    // Deliberately takes plain geometry/color, not a UI::Widget — Renderer
-    // is a Rendering-layer type and shouldn't need to know the UI layer's
-    // types exist. DustEngine::endUI() extracts these from a laid-out widget.
-    void drawUIRect(VkCommandBuffer cmd,
-                    float x, float y, float w, float h,
-                    float borderWidthPx, float borderRadiusPx,
-                    const float fillColor[4], const float borderColor[4],
-                    float opacity, VkExtent2D screenSize);
+    static constexpr uint32_t kUIInstanceCapacity = 4096;
+    VkBuffer      uiInstanceBuffer = VK_NULL_HANDLE;
+    VmaAllocation uiInstanceAlloc  = VK_NULL_HANDLE;
+    void*         uiInstanceMapped = nullptr; // persistently mapped, see Renderer::init
+    // Write cursor into the buffer above, reset each beginFrame so several
+    // batches within one frame don't overwrite each other.
+    uint32_t      uiInstanceCursor = 0;
+
+    // Draws `count` widget quads in a single instanced call. `texSet` is
+    // bound for the whole batch — the caller groups instances by texture and
+    // calls this once per run (defaultMaterialSet's 1x1 white for untextured
+    // widgets, so ui.frag can multiply unconditionally). `upload=false`
+    // reuses whatever is already at the same buffer offset, which is how
+    // Phase 4's diff skips re-uploading an unchanged UI.
+    void drawUIRects(VkCommandBuffer cmd,
+                     const UI::RectInstance* instances, uint32_t count,
+                     VkDescriptorSet texSet, VkExtent2D screenSize,
+                     bool upload = true, VkPipeline pipelineOverride = VK_NULL_HANDLE);
+
+    // Shared by the built-in UI pipeline and every custom shader widget
+    // pipeline — one instance layout, so a custom shader can be swapped in
+    // without touching the buffer or the batcher. Mirrors UI::RectInstance.
+    static std::vector<InstanceAttrib> uiInstanceAttribs();
+
+    // Builds a pipeline pairing the stock ui.vert with a caller-supplied
+    // fragment shader (UITimeline.md Phase 9). The resulting pipeline is
+    // bound through uiLayout, so it shares push constants and the material
+    // set; Renderer owns it and destroys it at shutdown.
+    bool buildUIShaderPipeline(VulkanContext& ctx, Swapchain& swapchain,
+                               const uint32_t* fragSpv, size_t fragSpvLen,
+                               VkPipeline& outPipeline);
+    std::vector<VkPipeline>       uiShaderPipelines;
+    std::vector<VkPipelineLayout> uiShaderPipelineLayouts;
 
     // ── Text (MSDF) ── same shared unit quad as DustUI rects, instanced
     // once per glyph — see Shaders/text.vert/frag and Core/UI/Font.hpp.
@@ -75,17 +103,21 @@ struct Renderer {
     // same reason: no per-frame-in-flight duplication yet). One draw call
     // per Font per frame, which is all DustUI needs today.
     static constexpr uint32_t kTextInstanceCapacity = 8192;
+    // Write cursor, reset each beginFrame — text is now drawn in several
+    // depth-ordered batches per frame rather than one, so they can't all
+    // start at offset 0.
+    uint32_t      textInstanceCursor = 0;
     VkBuffer      textInstanceBuffer = VK_NULL_HANDLE;
     VmaAllocation textInstanceAlloc  = VK_NULL_HANDLE;
     void*         textInstanceMapped = nullptr; // persistently mapped, see Renderer::init
 
     // Uploads `instances` into the shared instance buffer and issues one
-    // instanced draw call against `font`'s atlas. outlineWidthPx=0 (default)
-    // disables the outline entirely at no extra cost — see text.frag.
+    // instanced draw call against `font`'s atlas. Outline width/colour ride
+    // along per glyph (see UI::GlyphInstance), so a single batch can mix
+    // outlined and plain runs.
     void drawTextInstances(VkCommandBuffer cmd, const UI::Font& font,
-                           const std::vector<UI::GlyphInstance>& instances,
-                           VkExtent2D screenSize,
-                           float outlineWidthPx = 0.0f, Color outlineColor = Colors::Transparent);
+                           const UI::GlyphInstance* instances, uint32_t count,
+                           VkExtent2D screenSize);
 
     // ── Particles ── compute-simulated billboard quads, one per particle slot.
     // Dead particles (life <= 0) are collapsed to zero size in the shader.
