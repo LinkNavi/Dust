@@ -177,10 +177,10 @@ Texture Texture::loadFromFile(VulkanContext& ctx, const char* path, bool srgb) {
     stbi_image_free(pixels);
     return tex;
 }
-Texture Texture::makeSolid(VulkanContext& ctx, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+Texture Texture::makeSolid(VulkanContext& ctx, uint8_t r, uint8_t g, uint8_t b, uint8_t a, bool srgb) {
     Texture tex;
     uint8_t px[4] = { r, g, b, a };
-    tex.upload(ctx, px, 1, 1);
+    tex.upload(ctx, px, 1, 1, srgb);
     return tex;
 }
 

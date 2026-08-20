@@ -13,9 +13,14 @@ layout(location=3) in vec4 inColor;
 
 layout(location=0) out vec4 outColor;
 layout(location=1) out vec2 outUV;
+// Cheap fog distance: for a standard perspective matrix, clip.w equals the
+// view-space -z (camera distance along view axis) — free to derive, no
+// separate model matrix or camera position needed in the push constant.
+layout(location=2) out float outViewDist;
 
 void main() {
     gl_Position = push.transform * vec4(inPosition, 1.0);
     outColor    = inColor;
     outUV       = inUV;
+    outViewDist = gl_Position.w;
 }

@@ -67,6 +67,7 @@ embed_comp() {
 }
 
 embed_pair default   default   "$ENGINE_DIR/include/Core/Rendering/DefaultShaders.hpp"
+embed_pair lit       lit       "$ENGINE_DIR/include/Core/Rendering/LitShaders.hpp"
 embed_pair ui        ui        "$ENGINE_DIR/include/Core/UI/UIShaders.hpp"
 # Example custom shader widget (Phase 9) — frag only, pairs with ui.vert
 embed_frag ui_pulse            "$ENGINE_DIR/include/Core/UI/PulseShader.hpp"
@@ -74,5 +75,6 @@ embed_frag ui_healthbar        "$ENGINE_DIR/include/Core/UI/HealthBarShader.hpp"
 embed_pair text      text      "$ENGINE_DIR/include/Core/UI/TextShaders.hpp"
 embed_pair particle  particle  "$ENGINE_DIR/include/Core/Rendering/ParticleShaders.hpp"
 embed_pair billboard billboard "$ENGINE_DIR/include/Core/Rendering/BillboardShaders.hpp"
+embed_pair shadow    shadow    "$ENGINE_DIR/include/Core/Rendering/ShadowShaders.hpp"
 
 embed_comp particles "$ENGINE_DIR/include/Core/Rendering/ParticleComputeShaders.hpp"

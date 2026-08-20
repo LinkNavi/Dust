@@ -1,4 +1,5 @@
 #include "Core/Rendering/Camera.hpp"
+#include "DustEngine.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cmath>
@@ -48,6 +49,23 @@ void Camera::lookAt(glm::vec3 target) {
     dir = glm::normalize(dir);
     pitchDeg = glm::degrees(asinf(dir.y));
     yawDeg   = glm::degrees(atan2f(dir.z, dir.x));
+}
+
+void updateFlyCamera(Camera& camera, DustEngine& engine, float dt,
+                      float moveSpeed, float mouseSensitivity) {
+    glm::vec2 delta = engine.mouseDelta(); // capture-aware — zero while UI has mouse focus
+    camera.rotate(delta.x * mouseSensitivity, -delta.y * mouseSensitivity);
+
+    glm::vec3 move{ 0.0f };
+    if (engine.isKeyDown(GLFW_KEY_W)) move += camera.forward();
+    if (engine.isKeyDown(GLFW_KEY_S)) move -= camera.forward();
+    if (engine.isKeyDown(GLFW_KEY_D)) move += camera.right();
+    if (engine.isKeyDown(GLFW_KEY_A)) move -= camera.right();
+    if (engine.isKeyDown(GLFW_KEY_SPACE))      move += glm::vec3(0.0f, 1.0f, 0.0f);
+    if (engine.isKeyDown(GLFW_KEY_LEFT_SHIFT)) move -= glm::vec3(0.0f, 1.0f, 0.0f);
+
+    if (glm::length(move) > 0.0001f)
+        camera.position += glm::normalize(move) * moveSpeed * dt;
 }
 
 } // namespace Dust

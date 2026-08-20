@@ -29,7 +29,13 @@ struct Material {
     int emissiveTexture          = -1;
     int occlusionTexture         = -1;
 
-    VkDescriptorSet materialSet = VK_NULL_HANDLE; // set=0 — bound at draw time
+    VkDescriptorSet materialSet = VK_NULL_HANDLE; // set=0 for the unlit default pipeline — bound at draw time
+
+    // set=0 for the lit pipeline (Renderer::litMaterialSetLayout) — all five
+    // maps this material has, defaults filled in for whatever's absent (see
+    // Renderer::createLitMaterialSet). Built alongside materialSet so
+    // DustEngine::drawModel can pick either at draw time with no extra work.
+    VkDescriptorSet litMaterialSet = VK_NULL_HANDLE;
 };
 
 struct Submesh {

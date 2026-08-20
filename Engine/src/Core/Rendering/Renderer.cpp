@@ -1,6 +1,8 @@
 #include "Core/Rendering/Renderer.hpp"
 #include "Core/Rendering/PipelineBuilder.hpp"
 #include "Core/Rendering/DefaultShaders.hpp"
+#include "Core/Rendering/LitShaders.hpp"
+#include "Core/Rendering/ShadowShaders.hpp"
 #include "Core/Rendering/ParticleShaders.hpp"
 #include "Core/Rendering/BillboardShaders.hpp"
 #include "Core/Rendering/ParticleSystem.hpp"
@@ -47,6 +49,294 @@ namespace Dust {
         defaultWhiteTexture = Texture::makeSolid(ctx, 255, 255, 255, 255);
         defaultMaterialSet  = createMaterialSet(ctx, defaultWhiteTexture);
 
+        // (128,128,255) -> (0.5,0.5,1.0) tangent-space up, i.e. "no bump" —
+        // linear, not sRGB, since a normal map is data, not color.
+        defaultNormalTexture = Texture::makeSolid(ctx, 128, 128, 255, 255, /*srgb=*/false);
+
+        // ── Lit material descriptor layout/pool (set=0, 5 combined image samplers) ──
+        VkDescriptorSetLayoutBinding litBindings[5]{};
+        for (uint32_t i = 0; i < 5; i++) {
+            litBindings[i].binding         = i;
+            litBindings[i].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            litBindings[i].descriptorCount = 1;
+            litBindings[i].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+        }
+        VkDescriptorSetLayoutCreateInfo litSetLayoutInfo{};
+        litSetLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        litSetLayoutInfo.bindingCount = 5;
+        litSetLayoutInfo.pBindings    = litBindings;
+        if (vkCreateDescriptorSetLayout(ctx.device, &litSetLayoutInfo, nullptr, &litMaterialSetLayout) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create lit material descriptor set layout\n");
+            return false;
+        }
+
+        // Same kMaxMaterials budget as materialPool (models loaded over a
+        // game's lifetime), but its own pool — materialPool stays sized for
+        // 1-sampler sets, this one for 5-sampler lit material sets.
+        VkDescriptorPoolSize litPoolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxMaterials * 5 };
+        VkDescriptorPoolCreateInfo litPoolInfo{};
+        litPoolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        litPoolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        litPoolInfo.maxSets       = kMaxMaterials;
+        litPoolInfo.poolSizeCount = 1;
+        litPoolInfo.pPoolSizes    = &litPoolSize;
+        if (vkCreateDescriptorPool(ctx.device, &litPoolInfo, nullptr, &litMaterialPool) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create lit material descriptor pool\n");
+            return false;
+        }
+
+        defaultLitMaterialSet = createLitMaterialSet(ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
+
+        // ── Lights UBO + set=1 layout ──
+        // Binding 1 (shadow map) lives here rather than a new set=2 — see
+        // the comment on lit.frag's `shadowMap` declaration.
+        VkDescriptorSetLayoutBinding lightsBindings[2]{};
+        lightsBindings[0].binding         = 0;
+        lightsBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        lightsBindings[0].descriptorCount = 1;
+        lightsBindings[0].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        lightsBindings[1].binding         = 1;
+        lightsBindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        lightsBindings[1].descriptorCount = 1;
+        lightsBindings[1].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkDescriptorSetLayoutCreateInfo lightsSetLayoutInfo{};
+        lightsSetLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        lightsSetLayoutInfo.bindingCount = 2;
+        lightsSetLayoutInfo.pBindings    = lightsBindings;
+        if (vkCreateDescriptorSetLayout(ctx.device, &lightsSetLayoutInfo, nullptr, &lightsSetLayout) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create lights descriptor set layout\n");
+            return false;
+        }
+
+        VkDescriptorPoolSize lightsPoolSizes[2] = {
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+        };
+        VkDescriptorPoolCreateInfo lightsPoolInfo{};
+        lightsPoolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        lightsPoolInfo.maxSets       = 1;
+        lightsPoolInfo.poolSizeCount = 2;
+        lightsPoolInfo.pPoolSizes    = lightsPoolSizes;
+        if (vkCreateDescriptorPool(ctx.device, &lightsPoolInfo, nullptr, &lightsPool) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create lights descriptor pool\n");
+            return false;
+        }
+
+        VkDescriptorSetAllocateInfo lightsAllocInfo{};
+        lightsAllocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        lightsAllocInfo.descriptorPool     = lightsPool;
+        lightsAllocInfo.descriptorSetCount = 1;
+        lightsAllocInfo.pSetLayouts        = &lightsSetLayout;
+        if (vkAllocateDescriptorSets(ctx.device, &lightsAllocInfo, &lightsSet) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to allocate lights descriptor set\n");
+            return false;
+        }
+
+        VkBufferCreateInfo lightsBufInfo{};
+        lightsBufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        lightsBufInfo.size  = sizeof(LightsUBOData);
+        lightsBufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+
+        VmaAllocationCreateInfo lightsAllocCreateInfo{};
+        lightsAllocCreateInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        lightsAllocCreateInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VmaAllocationInfo lightsAllocResult{};
+        if (vmaCreateBuffer(ctx.allocator, &lightsBufInfo, &lightsAllocCreateInfo, &lightsBuffer, &lightsAlloc, &lightsAllocResult) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create lights UBO\n");
+            return false;
+        }
+        lightsMapped = lightsAllocResult.pMappedData;
+
+        VkDescriptorBufferInfo lightsBufDescInfo{};
+        lightsBufDescInfo.buffer = lightsBuffer;
+        lightsBufDescInfo.offset = 0;
+        lightsBufDescInfo.range  = sizeof(LightsUBOData);
+        VkWriteDescriptorSet lightsWrite{};
+        lightsWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightsWrite.dstSet          = lightsSet;
+        lightsWrite.dstBinding      = 0;
+        lightsWrite.descriptorCount = 1;
+        lightsWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        lightsWrite.pBufferInfo     = &lightsBufDescInfo;
+        vkUpdateDescriptorSets(ctx.device, 1, &lightsWrite, 0, nullptr);
+
+        // ── Directional shadow map (fixed 2048x2048 depth target) ──
+        VkImageCreateInfo shadowImgInfo{};
+        shadowImgInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        shadowImgInfo.imageType     = VK_IMAGE_TYPE_2D;
+        shadowImgInfo.format        = shadowDepthFormat;
+        shadowImgInfo.extent        = { kShadowMapSize, kShadowMapSize, 1 };
+        shadowImgInfo.mipLevels     = 1;
+        shadowImgInfo.arrayLayers   = 1;
+        shadowImgInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+        shadowImgInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+        shadowImgInfo.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        shadowImgInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+        shadowImgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        VmaAllocationCreateInfo shadowAllocInfo{};
+        shadowAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+        if (vmaCreateImage(ctx.allocator, &shadowImgInfo, &shadowAllocInfo, &shadowImage, &shadowAlloc, nullptr) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create shadow map image\n");
+            return false;
+        }
+
+        VkImageViewCreateInfo shadowViewInfo{};
+        shadowViewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        shadowViewInfo.image                           = shadowImage;
+        shadowViewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+        shadowViewInfo.format                          = shadowDepthFormat;
+        shadowViewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
+        shadowViewInfo.subresourceRange.baseMipLevel   = 0;
+        shadowViewInfo.subresourceRange.levelCount     = 1;
+        shadowViewInfo.subresourceRange.baseArrayLayer = 0;
+        shadowViewInfo.subresourceRange.layerCount     = 1;
+        if (vkCreateImageView(ctx.device, &shadowViewInfo, nullptr, &shadowImageView) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create shadow map image view\n");
+            return false;
+        }
+
+        // Clamp-to-border + opaque white border so a sample that lands just
+        // outside the map (address-mode edge case, not the in-shader bounds
+        // check lit.frag already does) reads depth=1.0 — "nothing there",
+        // never spuriously "in shadow".
+        VkSamplerCreateInfo shadowSamplerInfo{};
+        shadowSamplerInfo.sType         = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        shadowSamplerInfo.magFilter     = VK_FILTER_LINEAR;
+        shadowSamplerInfo.minFilter     = VK_FILTER_LINEAR;
+        shadowSamplerInfo.addressModeU  = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.addressModeV  = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.addressModeW  = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.borderColor   = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+        shadowSamplerInfo.maxLod        = 1.0f;
+        if (vkCreateSampler(ctx.device, &shadowSamplerInfo, nullptr, &shadowSampler) != VK_SUCCESS) {
+            fprintf(stderr, "dust: failed to create shadow map sampler\n");
+            return false;
+        }
+
+        VkDescriptorImageInfo shadowImageInfo{};
+        shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        shadowImageInfo.imageView   = shadowImageView;
+        shadowImageInfo.sampler     = shadowSampler;
+        VkWriteDescriptorSet shadowWrite{};
+        shadowWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        shadowWrite.dstSet          = lightsSet;
+        shadowWrite.dstBinding      = 1;
+        shadowWrite.descriptorCount = 1;
+        shadowWrite.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        shadowWrite.pImageInfo      = &shadowImageInfo;
+        vkUpdateDescriptorSets(ctx.device, 1, &shadowWrite, 0, nullptr);
+
+        // One-off layout transition so the very first frame's lit draws
+        // (before any shadow pass has run) sample a defined SHADER_READ_ONLY
+        // image instead of leaving it in UNDEFINED — validation-clean even
+        // though HAS_SHADOWS-off pipelines never actually read it.
+        {
+            VkCommandPoolCreateInfo initPoolInfo{};
+            initPoolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+            initPoolInfo.queueFamilyIndex = ctx.graphicsFamily;
+            VkCommandPool initPool = VK_NULL_HANDLE;
+            vkCreateCommandPool(ctx.device, &initPoolInfo, nullptr, &initPool);
+            VkCommandBufferAllocateInfo initAllocInfo{};
+            initAllocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            initAllocInfo.commandPool        = initPool;
+            initAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            initAllocInfo.commandBufferCount = 1;
+            VkCommandBuffer initCmd = VK_NULL_HANDLE;
+            vkAllocateCommandBuffers(ctx.device, &initAllocInfo, &initCmd);
+            VkCommandBufferBeginInfo initBeginInfo{};
+            initBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            initBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            vkBeginCommandBuffer(initCmd, &initBeginInfo);
+            VkImageMemoryBarrier initBarrier{};
+            initBarrier.sType            = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            initBarrier.oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED;
+            initBarrier.newLayout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            initBarrier.image            = shadowImage;
+            initBarrier.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+            initBarrier.srcAccessMask    = 0;
+            initBarrier.dstAccessMask    = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(initCmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &initBarrier);
+            vkEndCommandBuffer(initCmd);
+            VkSubmitInfo initSubmit{};
+            initSubmit.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            initSubmit.commandBufferCount = 1;
+            initSubmit.pCommandBuffers    = &initCmd;
+            vkQueueSubmit(ctx.graphicsQueue, 1, &initSubmit, VK_NULL_HANDLE);
+            vkQueueWaitIdle(ctx.graphicsQueue);
+            vkDestroyCommandPool(ctx.device, initPool, nullptr);
+        }
+
+        // ── Shadow depth-only pipeline (Shaders/shadow.vert/shadow.frag) ──
+        auto shadowShaderMod = ShaderModule::fromBytes(
+            ctx.device,
+            (uint32_t*)shadow_vert_spv, shadow_vert_spv_len,
+            (uint32_t*)shadow_frag_spv, shadow_frag_spv_len
+        );
+        if (!shadowShaderMod.valid()) {
+            fprintf(stderr, "dust: failed to load shadow shaders\n");
+            return false;
+        }
+        {
+            PipelineBuilder shadowPb;
+            shadowPb.shader   = shadowShaderMod;
+            // mat4 lightViewProj + mat4 model = 128 bytes, vertex stage only.
+            shadowPb.pushConstant   = { VK_SHADER_STAGE_VERTEX_BIT, 128 };
+            shadowPb.depthTest      = true;
+            shadowPb.depthOnly      = true;
+            shadowPb.depthAttachmentFormat = shadowDepthFormat;
+            // No back-face culling — thin ground/wall geometry would
+            // otherwise self-shadow-miss depending on winding; the depth
+            // bias below is what actually fixes acne, not culling.
+            shadowPb.cullMode        = VK_CULL_MODE_NONE;
+            shadowPb.depthBiasEnable = true;
+            shadowPb.depthBiasConstant = 1.25f;
+            shadowPb.depthBiasSlope    = 1.75f;
+            if (!shadowPb.build(ctx, swapchain, shadowLayout, shadowPipeline)) {
+                fprintf(stderr, "dust: failed to build shadow pipeline\n");
+                shadowShaderMod.destroy(ctx.device);
+                return false;
+            }
+        }
+        shadowShaderMod.destroy(ctx.device);
+
+        // ── Lit pipeline layout (shared by every feature-flag variant) ──
+        auto litShader = ShaderModule::fromBytes(
+            ctx.device,
+            (uint32_t*)lit_vert_spv, lit_vert_spv_len,
+            (uint32_t*)lit_frag_spv, lit_frag_spv_len
+        );
+        if (!litShader.valid()) {
+            fprintf(stderr, "dust: failed to load lit shaders\n");
+            return false;
+        }
+        {
+            PipelineBuilder litPb;
+            litPb.shader         = litShader;
+            litPb.userSetLayout  = litMaterialSetLayout;
+            litPb.userSetLayout2 = lightsSetLayout;
+            // mat4 model + vec4 baseColorFactor + vec4 fogColor + vec4
+            // fogParams + vec4 materialParams = 128 bytes — see lit.vert/
+            // lit.frag's Push block and the comment on LightsUBOData for why
+            // viewProj/cameraPos live in the UBO instead of here.
+            litPb.pushConstant = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 128 };
+            litPb.depthTest    = true;
+            // featureMask 0 (no optional maps) is built eagerly so litLayout
+            // exists even if a game never loads a textured lit material —
+            // the resulting pipeline is cached in litPipelines like any other.
+            VkPipeline basePipeline = VK_NULL_HANDLE;
+            if (!litPb.build(ctx, swapchain, litLayout, basePipeline)) {
+                fprintf(stderr, "dust: failed to build lit pipeline\n");
+                litShader.destroy(ctx.device);
+                return false;
+            }
+            litPipelines[0] = basePipeline;
+        }
+        litShader.destroy(ctx.device);
+
         auto shader = ShaderModule::fromBytes(
             ctx.device,
             (uint32_t*)default_vert_spv, default_vert_spv_len,
@@ -61,9 +351,11 @@ namespace Dust {
         PipelineBuilder pb;
         pb.shader        = shader;
         pb.userSetLayout = materialSetLayout;
-        // mat4 transform + vec4 baseColorFactor, readable from both stages —
-        // see default.vert/default.frag, which share this exact layout.
-        pb.pushConstant  = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 80 };
+        // mat4 transform + vec4 baseColorFactor + vec4 fogColor + vec4
+        // fogParams, readable from both stages — see default.vert/
+        // default.frag, which share this exact layout. 112 bytes, still
+        // under Vulkan's guaranteed-minimum 128-byte push constant budget.
+        pb.pushConstant  = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 112 };
         pb.depthTest     = true; // swapchain now always carries a depth buffer
         pb.build(ctx, swapchain, defaultLayout, defaultPipeline);
         shader.destroy(ctx.device);
@@ -188,8 +480,11 @@ namespace Dust {
         particlePb.cullMode      = VK_CULL_MODE_NONE;
         particlePb.depthTest     = true;
         particlePb.blendEnable   = true;
-        // viewProj(mat4=64) + camRight(vec4=16) + camUp(vec4=16) = 96 bytes
-        particlePb.pushConstant  = { VK_SHADER_STAGE_VERTEX_BIT, 96 };
+        // viewProj(mat4=64) + camRight(vec4=16) + camUp(vec4=16) +
+        // fogColor(vec4=16) + fogParams(vec4=16) = 128 bytes — exactly
+        // Vulkan's guaranteed-minimum push constant budget. Both stages
+        // need it: vert derives view distance, frag mixes toward fogColor.
+        particlePb.pushConstant  = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 128 };
         particlePb.instanceStride  = ParticleSystem::instanceStride();
         particlePb.instanceAttribs = ParticleSystem::getInstanceAttribs();
         if (!particlePb.build(ctx, swapchain, particleLayout, particlePipeline)) {
@@ -256,10 +551,230 @@ VkDescriptorSet Renderer::createMaterialSet(VulkanContext& ctx, const Texture& t
     return set;
 }
 
+VkDescriptorSet Renderer::createLitMaterialSet(VulkanContext& ctx,
+                                               const Texture* baseColor,
+                                               const Texture* normal,
+                                               const Texture* metallicRoughness,
+                                               const Texture* emissive,
+                                               const Texture* occlusion) {
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool     = litMaterialPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts        = &litMaterialSetLayout;
+
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(ctx.device, &allocInfo, &set) != VK_SUCCESS) {
+        fprintf(stderr, "dust: failed to allocate lit material descriptor set (pool exhausted?)\n");
+        return VK_NULL_HANDLE;
+    }
+
+    const Texture* slots[5] = { baseColor, normal, metallicRoughness, emissive, occlusion };
+    VkDescriptorImageInfo imageInfos[5]{};
+    VkWriteDescriptorSet   writes[5]{};
+    for (uint32_t i = 0; i < 5; i++) {
+        // Binding 1 (normal) falls back to the flat-normal texture; every
+        // other slot falls back to 1x1 white, matching defaultMaterialSet's
+        // "no texture bound" convention.
+        const Texture& tex = slots[i] ? *slots[i] : (i == 1 ? defaultNormalTexture : defaultWhiteTexture);
+        imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfos[i].imageView   = tex.view;
+        imageInfos[i].sampler     = tex.sampler;
+
+        writes[i].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet          = set;
+        writes[i].dstBinding      = i;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].pImageInfo      = &imageInfos[i];
+    }
+    vkUpdateDescriptorSets(ctx.device, 5, writes, 0, nullptr);
+
+    return set;
+}
+
+void Renderer::updateLights(const LightsUBOData& data) {
+    if (!lightsMapped) return;
+    memcpy(lightsMapped, &data, sizeof(LightsUBOData));
+}
+
+VkPipeline Renderer::getLitPipeline(VulkanContext& ctx, Swapchain& swapchain, uint32_t featureMask) {
+    auto it = litPipelines.find(featureMask);
+    if (it != litPipelines.end()) return it->second;
+
+    auto shader = ShaderModule::fromBytes(
+        ctx.device,
+        (uint32_t*)lit_vert_spv, lit_vert_spv_len,
+        (uint32_t*)lit_frag_spv, lit_frag_spv_len
+    );
+    if (!shader.valid()) {
+        fprintf(stderr, "dust: failed to load lit shaders for feature mask %u\n", featureMask);
+        return VK_NULL_HANDLE;
+    }
+
+    PipelineBuilder pb;
+    pb.shader         = shader;
+    pb.userSetLayout  = litMaterialSetLayout;
+    pb.userSetLayout2 = lightsSetLayout;
+    pb.pushConstant   = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 128 };
+    pb.depthTest      = true;
+    // Spec constant ids 0-4 — see LitFeatureFlags and lit.frag's
+    // `layout(constant_id = N)` declarations, which this must stay in sync with.
+    pb.fragSpecConstants = {
+        (featureMask & LitFeature_NormalMap)            ? 1u : 0u,
+        (featureMask & LitFeature_MetallicRoughnessMap) ? 1u : 0u,
+        (featureMask & LitFeature_EmissiveMap)          ? 1u : 0u,
+        (featureMask & LitFeature_OcclusionMap)         ? 1u : 0u,
+        (featureMask & LitFeature_Shadows)              ? 1u : 0u,
+    };
+
+    // Layout is identical across every variant (litLayout, built at init) —
+    // this throwaway is discarded immediately, same trick buildUIShaderPipeline
+    // uses for custom UI shader fragment variants.
+    VkPipelineLayout throwaway = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    bool ok = pb.build(ctx, swapchain, throwaway, pipeline);
+    shader.destroy(ctx.device);
+    if (throwaway != VK_NULL_HANDLE) vkDestroyPipelineLayout(ctx.device, throwaway, nullptr);
+    if (!ok) {
+        fprintf(stderr, "dust: failed to build lit pipeline variant (mask=%u)\n", featureMask);
+        return VK_NULL_HANDLE;
+    }
+
+    litPipelines[featureMask] = pipeline;
+    return pipeline;
+}
+
+void Renderer::drawLit(VkCommandBuffer cmd, Mesh& mesh, uint32_t featureMask,
+                       VulkanContext& ctx, Swapchain& swapchain,
+                       const float model[16], VkDescriptorSet litMaterialSet,
+                       const float baseColorFactor[4], const float fogColor[4],
+                       const float fogParams[4], const float materialParams[4]) {
+    if (mesh.dirty) return; // must upload first
+
+    VkPipeline pipeline = getLitPipeline(ctx, swapchain, featureMask);
+    if (pipeline == VK_NULL_HANDLE) return;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    VkDescriptorSet matSet = litMaterialSet != VK_NULL_HANDLE ? litMaterialSet : defaultLitMaterialSet;
+    VkDescriptorSet sets[2] = { matSet, lightsSet };
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, litLayout, 0, 2, sets, 0, nullptr);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &mesh.vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    float identity[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+    float white[4]     = { 1,1,1,1 };
+    float defaultMat[4] = { 0.0f, 1.0f, 0.0f, 0.0f }; // metallic=0, roughness=1, emissiveStrength=0
+
+    // Matches lit.vert/lit.frag's shared `Push { mat4 model; vec4
+    // baseColorFactor; vec4 fogColor; vec4 fogParams; vec4 materialParams; }`
+    // — exactly 128 bytes, Vulkan's guaranteed-minimum push constant budget.
+    struct { float model[16]; float baseColorFactor[4]; float fogColor[4]; float fogParams[4]; float materialParams[4]; } pc = {};
+    memcpy(pc.model, model ? model : identity, sizeof(pc.model));
+    memcpy(pc.baseColorFactor, baseColorFactor ? baseColorFactor : white, sizeof(pc.baseColorFactor));
+    if (fogColor)       memcpy(pc.fogColor, fogColor, sizeof(pc.fogColor));
+    if (fogParams)      memcpy(pc.fogParams, fogParams, sizeof(pc.fogParams));
+    memcpy(pc.materialParams, materialParams ? materialParams : defaultMat, sizeof(pc.materialParams));
+    vkCmdPushConstants(cmd, litLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+    VkViewport vp{ 0,0,(float)currentExtent.width,(float)currentExtent.height,0,1 };
+    VkRect2D   sc{ {0,0}, currentExtent };
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+
+    vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
+}
+
+void Renderer::beginShadowPass(VkCommandBuffer cmd) {
+    VkImageMemoryBarrier barrier{};
+    barrier.sType            = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED; // discarded via CLEAR below, same shortcut as Renderer::beginRendering
+    barrier.newLayout        = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.image            = shadowImage;
+    barrier.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+    barrier.srcAccessMask    = 0;
+    barrier.dstAccessMask    = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkRenderingAttachmentInfoKHR depthAttachment{};
+    depthAttachment.sType                   = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+    depthAttachment.imageView               = shadowImageView;
+    depthAttachment.imageLayout             = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp                  = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp                 = VK_ATTACHMENT_STORE_OP_STORE; // unlike the swapchain depth buffer, this one IS read back (by lit.frag)
+    depthAttachment.clearValue.depthStencil = { 1.0f, 0 };
+
+    VkRenderingInfoKHR renderingInfo{};
+    renderingInfo.sType            = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+    renderingInfo.renderArea       = { {0, 0}, {kShadowMapSize, kShadowMapSize} };
+    renderingInfo.layerCount       = 1;
+    renderingInfo.colorAttachmentCount = 0;
+    renderingInfo.pDepthAttachment = &depthAttachment;
+    dispatch.cmdBeginRendering(cmd, &renderingInfo);
+
+    VkViewport vp{ 0, 0, (float)kShadowMapSize, (float)kShadowMapSize, 0, 1 };
+    VkRect2D   sc{ {0, 0}, {kShadowMapSize, kShadowMapSize} };
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+}
+
+void Renderer::endShadowPass(VkCommandBuffer cmd) {
+    dispatch.cmdEndRendering(cmd);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType            = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout        = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.newLayout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.image            = shadowImage;
+    barrier.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+    barrier.srcAccessMask    = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask    = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+}
+
+void Renderer::drawShadow(VkCommandBuffer cmd, Mesh& mesh,
+                          const float model[16], const float lightViewProj[16]) {
+    if (mesh.dirty || shadowPipeline == VK_NULL_HANDLE) return;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &mesh.vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    // Matches shadow.vert's `Push { mat4 lightViewProj; mat4 model; }`.
+    struct { float lightViewProj[16]; float model[16]; } pc;
+    memcpy(pc.lightViewProj, lightViewProj, sizeof(pc.lightViewProj));
+    memcpy(pc.model, model, sizeof(pc.model));
+    vkCmdPushConstants(cmd, shadowLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
+
+    vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
+}
+
 void Renderer::shutdown(VulkanContext& ctx) {
     vkDeviceWaitIdle(ctx.device);
+    if (shadowPipeline)    { vkDestroyPipeline(ctx.device, shadowPipeline, nullptr); shadowPipeline = VK_NULL_HANDLE; }
+    if (shadowLayout)      { vkDestroyPipelineLayout(ctx.device, shadowLayout, nullptr); shadowLayout = VK_NULL_HANDLE; }
+    if (shadowSampler)     { vkDestroySampler(ctx.device, shadowSampler, nullptr); shadowSampler = VK_NULL_HANDLE; }
+    if (shadowImageView)   { vkDestroyImageView(ctx.device, shadowImageView, nullptr); shadowImageView = VK_NULL_HANDLE; }
+    if (shadowImage)       { vmaDestroyImage(ctx.allocator, shadowImage, shadowAlloc); shadowImage = VK_NULL_HANDLE; shadowAlloc = VK_NULL_HANDLE; }
     if (defaultPipeline) { vkDestroyPipeline(ctx.device, defaultPipeline, nullptr); defaultPipeline = VK_NULL_HANDLE; }
     if (defaultLayout)   { vkDestroyPipelineLayout(ctx.device, defaultLayout, nullptr); defaultLayout = VK_NULL_HANDLE; }
+    for (auto& kv : litPipelines) if (kv.second) vkDestroyPipeline(ctx.device, kv.second, nullptr);
+    litPipelines.clear();
+    if (litLayout)          { vkDestroyPipelineLayout(ctx.device, litLayout, nullptr); litLayout = VK_NULL_HANDLE; }
+    if (lightsBuffer)       { vmaDestroyBuffer(ctx.allocator, lightsBuffer, lightsAlloc); lightsBuffer = VK_NULL_HANDLE; lightsMapped = nullptr; }
+    if (lightsPool)         { vkDestroyDescriptorPool(ctx.device, lightsPool, nullptr); lightsPool = VK_NULL_HANDLE; }
+    if (lightsSetLayout)    { vkDestroyDescriptorSetLayout(ctx.device, lightsSetLayout, nullptr); lightsSetLayout = VK_NULL_HANDLE; }
+    defaultNormalTexture.destroy(ctx);
+    if (litMaterialPool)      { vkDestroyDescriptorPool(ctx.device, litMaterialPool, nullptr); litMaterialPool = VK_NULL_HANDLE; }
+    if (litMaterialSetLayout) { vkDestroyDescriptorSetLayout(ctx.device, litMaterialSetLayout, nullptr); litMaterialSetLayout = VK_NULL_HANDLE; }
     if (uiPipeline)       { vkDestroyPipeline(ctx.device, uiPipeline, nullptr); uiPipeline = VK_NULL_HANDLE; }
     if (uiLayout)         { vkDestroyPipelineLayout(ctx.device, uiLayout, nullptr); uiLayout = VK_NULL_HANDLE; }
     uiQuad.destroy();
@@ -286,7 +801,9 @@ void Renderer::draw(VkCommandBuffer cmd, Mesh& mesh,
                     VkPipeline pipeline, VkPipelineLayout layout,
                     const float transform[16],
                     VkDescriptorSet materialSet,
-                    const float baseColorFactor[4]) {
+                    const float baseColorFactor[4],
+                    const float fogColor[4],
+                    const float fogParams[4]) {
     if (mesh.dirty) return; // must upload first
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -316,12 +833,16 @@ void Renderer::draw(VkCommandBuffer cmd, Mesh& mesh,
     // or a fragment stage flag there would violate its pipeline layout —
     // fall back to the original push for those.
     if (materialSet != VK_NULL_HANDLE) {
-        // Matches the `Push { mat4 transform; vec4 baseColorFactor; }` block
-        // shared by default.vert/default.frag — mat4 is naturally 64 bytes
-        // so the vec4 lands at offset 64 with no padding either side.
-        struct { float transform[16]; float baseColorFactor[4]; } pc;
+        // Matches the `Push { mat4 transform; vec4 baseColorFactor; vec4
+        // fogColor; vec4 fogParams; }` block shared by default.vert/
+        // default.frag — mat4 is naturally 64 bytes so every vec4 after it
+        // lands with no padding either side. fogColor.a > 0.5 enables fog;
+        // zero-init (no fog args passed) means it's off by default.
+        struct { float transform[16]; float baseColorFactor[4]; float fogColor[4]; float fogParams[4]; } pc = {};
         memcpy(pc.transform, transform ? transform : identity, sizeof(pc.transform));
         memcpy(pc.baseColorFactor, baseColorFactor ? baseColorFactor : white, sizeof(pc.baseColorFactor));
+        if (fogColor)  memcpy(pc.fogColor, fogColor, sizeof(pc.fogColor));
+        if (fogParams) memcpy(pc.fogParams, fogParams, sizeof(pc.fogParams));
         vkCmdPushConstants(cmd, layout,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
     } else {
@@ -470,7 +991,9 @@ void Renderer::drawParticles(VkCommandBuffer cmd,
                               const glm::mat4& viewProj,
                               const glm::vec3& camRight,
                               const glm::vec3& camUp,
-                              VkDescriptorSet materialSet) {
+                              VkDescriptorSet materialSet,
+                              const float fogColor[4],
+                              const float fogParams[4]) {
     if (ps.maxParticles() == 0 || uiQuad.dirty) return;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particlePipeline);
@@ -484,11 +1007,13 @@ void Renderer::drawParticles(VkCommandBuffer cmd,
     vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
     vkCmdBindIndexBuffer(cmd, uiQuad.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    struct { glm::mat4 vp; glm::vec4 right; glm::vec4 up; } pc;
-    pc.vp    = viewProj;
-    pc.right = glm::vec4(camRight, 0.0f);
-    pc.up    = glm::vec4(camUp,    0.0f);
-    vkCmdPushConstants(cmd, particleLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
+    ParticlePushConstants pc{};
+    pc.viewProj = viewProj;
+    pc.camRight = glm::vec4(camRight, 0.0f);
+    pc.camUp    = glm::vec4(camUp,    0.0f);
+    if (fogColor)  memcpy(&pc.fogColor,  fogColor,  sizeof(pc.fogColor));
+    if (fogParams) memcpy(&pc.fogParams, fogParams, sizeof(pc.fogParams));
+    vkCmdPushConstants(cmd, particleLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 
     VkViewport vp{ 0, 0, (float)currentExtent.width, (float)currentExtent.height, 0, 1 };
     VkRect2D   sc{ {0, 0}, currentExtent };

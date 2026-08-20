@@ -28,8 +28,11 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     std::vector<VkDescriptorSetLayout> setLayouts;
     // set=0 is always the engine scene UBO — caller must pass sceneSetLayout
     // via userSetLayout slot for now until SceneUBO is wired up
-    if (userSetLayout != VK_NULL_HANDLE)
+    if (userSetLayout != VK_NULL_HANDLE) {
         setLayouts.push_back(userSetLayout);
+        if (userSetLayout2 != VK_NULL_HANDLE)
+            setLayouts.push_back(userSetLayout2);
+    }
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -61,6 +64,20 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
     stages[1].module = shader.frag;
     stages[1].pName  = "main";
+
+    // ── Specialization constants (fragment stage only, see fragSpecConstants) ──
+    std::vector<VkSpecializationMapEntry> specEntries;
+    VkSpecializationInfo specInfo{};
+    if (!fragSpecConstants.empty()) {
+        specEntries.reserve(fragSpecConstants.size());
+        for (uint32_t i = 0; i < (uint32_t)fragSpecConstants.size(); i++)
+            specEntries.push_back({ i, i * (uint32_t)sizeof(uint32_t), sizeof(uint32_t) });
+        specInfo.mapEntryCount = (uint32_t)specEntries.size();
+        specInfo.pMapEntries   = specEntries.data();
+        specInfo.dataSize      = fragSpecConstants.size() * sizeof(uint32_t);
+        specInfo.pData         = fragSpecConstants.data();
+        stages[1].pSpecializationInfo = &specInfo;
+    }
 
     // ── Vertex input ──
     std::vector<VkVertexInputBindingDescription> bindings = { vertexBinding() };
@@ -103,6 +120,9 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     raster.cullMode    = cullMode;
     raster.frontFace   = frontFace;
     raster.lineWidth   = 1.0f;
+    raster.depthBiasEnable         = depthBiasEnable ? VK_TRUE : VK_FALSE;
+    raster.depthBiasConstantFactor = depthBiasConstant;
+    raster.depthBiasSlopeFactor    = depthBiasSlope;
 
     // ── Multisampling ──
     VkPipelineMultisampleStateCreateInfo msaa{};
@@ -125,8 +145,8 @@ bool PipelineBuilder::build(VulkanContext& ctx,
 
     VkPipelineColorBlendStateCreateInfo colorBlend{};
     colorBlend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlend.attachmentCount = 1;
-    colorBlend.pAttachments    = &blendAttach;
+    colorBlend.attachmentCount = depthOnly ? 0 : 1;
+    colorBlend.pAttachments    = depthOnly ? nullptr : &blendAttach;
 
     // ── Depth/stencil ──
     // depthWriteEnable follows depthTest — draws that opt out of depth
@@ -141,14 +161,15 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     // ── Dynamic rendering (Vulkan 1.3+) ──
     VkPipelineRenderingCreateInfoKHR renderingInfo{};
     renderingInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
-    renderingInfo.colorAttachmentCount    = 1;
-    renderingInfo.pColorAttachmentFormats = &swapchain.imageFormat;
+    renderingInfo.colorAttachmentCount    = depthOnly ? 0 : 1;
+    renderingInfo.pColorAttachmentFormats = depthOnly ? nullptr : &swapchain.imageFormat;
     // Unconditional, unlike depthTestEnable/depthWriteEnable below — every
     // pipeline used inside Renderer::beginRendering()'s pass must declare
     // the bound depth attachment's format, whether or not it actually tests
     // or writes depth (VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-08914).
     // depthTest=false just means "don't test/write", not "no depth attachment exists".
-    renderingInfo.depthAttachmentFormat = swapchain.depthFormat;
+    renderingInfo.depthAttachmentFormat = depthAttachmentFormat != VK_FORMAT_UNDEFINED
+                                         ? depthAttachmentFormat : swapchain.depthFormat;
 
     // ── Create ──
     VkGraphicsPipelineCreateInfo pipelineInfo{};

@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 
 namespace Dust {
 
@@ -46,6 +47,9 @@ Entity* DustEngine::createEntity(const char* name, Entity* parent) {
 void DustEngine::shutdown() {
     vkDeviceWaitIdle(vulkan.device);
 
+    if (m_particleComputeFence)    { vkDestroyFence(vulkan.device, m_particleComputeFence, nullptr); m_particleComputeFence = VK_NULL_HANDLE; }
+    if (m_particleComputeDescPool) { vkDestroyDescriptorPool(vulkan.device, m_particleComputeDescPool, nullptr); m_particleComputeDescPool = VK_NULL_HANDLE; }
+    if (m_particleComputePool)     { vkDestroyCommandPool(vulkan.device, m_particleComputePool, nullptr); m_particleComputePool = VK_NULL_HANDLE; }
     if (m_particleComputePipeline) { vkDestroyPipeline(vulkan.device, m_particleComputePipeline, nullptr); m_particleComputePipeline = VK_NULL_HANDLE; }
     if (m_particleComputeLayout)   { vkDestroyPipelineLayout(vulkan.device, m_particleComputeLayout, nullptr); m_particleComputeLayout = VK_NULL_HANDLE; }
     if (m_particleComputeSetLayout) { vkDestroyDescriptorSetLayout(vulkan.device, m_particleComputeSetLayout, nullptr); m_particleComputeSetLayout = VK_NULL_HANDLE; }
@@ -79,12 +83,15 @@ void DustEngine::run(std::function<void(float dt)> onUpdate) {
 
         float dt = windows.windows.empty() ? 0.0f : windows.windows[0].deltaTime;
 
-        // TODO: tick ECS systems
-        // TODO: begin render frame
+        // No systems registry exists yet (ecs::Registry has no concept of
+        // registered per-frame systems) — nothing to tick here until one is
+        // built. onUpdate(dt) is the caller's own per-frame hook in the
+        // meantime.
+        beginDrawing();
 
         onUpdate(dt);
 
-        // TODO: end render frame / present
+        endDrawing();
     }
 }
 
@@ -131,15 +138,185 @@ void DustEngine::beginMode3D(const Camera& camera) {
     activeViewProj = camera.viewProj(aspect);
     activeCamRight = camera.right();
     activeCamUp    = camera.up();
+    activeCamera   = camera;
+
+    // No directional light configured = shadow pass is skipped, not an
+    // error — see setShadowsEnabled()'s doc comment.
+    shadowPassActive = shadowsEnabled && dirLightOn;
+    if (shadowPassActive) {
+        shadowDrawBuffer.clear();
+
+        // Orthographic frustum around shadowCenter, looking along the sun's
+        // travel direction. `up` just needs to not be parallel with the
+        // light direction; the near-vertical fallback keeps glm::lookAt
+        // well-defined for a near-straight-down sun (the common case).
+        glm::vec3 dir = dirLightDirection;
+        glm::vec3 up  = (fabsf(dir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 eye = shadowCenter - dir * shadowFar * 0.5f;
+        glm::mat4 lightView = glm::lookAt(eye, eye + dir, up);
+        glm::mat4 lightProj = glm::ortho(-shadowHalfExtent, shadowHalfExtent,
+                                         -shadowHalfExtent, shadowHalfExtent,
+                                         shadowNear, shadowFar);
+        // Vulkan clip space is Y-down — same flip Camera::projection applies
+        // for the main camera's projection.
+        lightProj[1][1] *= -1.0f;
+        lightSpaceViewProj = lightProj * lightView;
+    }
+
+    // Refreshed once per frame, not per draw — see LightsUBOData's doc
+    // comment in Renderer.hpp. Cheap even when no lights are configured
+    // (anyLightsActive() == false), so it isn't worth gating.
+    updateLightsUBO();
 }
 
 void DustEngine::endMode3D() {
-    // No-op for now — kept for symmetry with beginMode3D and raylib parity.
+    if (!shadowPassActive || !frameValid || !window) { shadowPassActive = false; return; }
+
+    VkCommandBuffer cmd = window->renderer.cmd();
+
+    // vkCmdBeginRendering can't nest — the color pass (started by
+    // clearBackground()/the first draw call) has to be suspended around the
+    // shadow pass's own dynamic-rendering pass into a different target, then
+    // resumed. Re-clearing on resume is harmless: nothing color-side has
+    // drawn yet this frame (every lit draw inside this beginMode3D/
+    // endMode3D bracket went into shadowDrawBuffer instead — see
+    // drawModel()/drawMesh()).
+    bool wasRendering = renderingBegun;
+    if (wasRendering) window->renderer.endRendering();
+
+    // Replay 1: depth-only into the shadow map, from the light's POV.
+    window->renderer.beginShadowPass(cmd);
+    for (auto& d : shadowDrawBuffer)
+        window->renderer.drawShadow(cmd, *d.mesh, &d.world[0][0], &lightSpaceViewProj[0][0]);
+    window->renderer.endShadowPass(cmd);
+
+    if (wasRendering) window->renderer.beginRendering(vulkan, *window);
+
+    // Replay 2: the actual color pass, now sampling the populated shadow map.
+    float fogColorPc[4]  = { fogColor.x, fogColor.y, fogColor.z, fogEnabled ? 1.0f : 0.0f };
+    float fogParamsPc[4] = { fogStart, fogEnd, 0.0f, 0.0f };
+    for (auto& d : shadowDrawBuffer) {
+        window->renderer.drawLit(cmd, *d.mesh, d.featureMask,
+                                 vulkan, window->swapchain,
+                                 &d.world[0][0], d.litMaterialSet,
+                                 &d.baseColorFactor[0], fogColorPc, fogParamsPc,
+                                 &d.materialParams[0]);
+    }
+
+    shadowDrawBuffer.clear();
+    shadowPassActive = false;
+}
+
+// ── Lighting ─────────────────────────────────────────────────────────────
+
+DustEngine& DustEngine::setDirectionalLight(glm::vec3 direction, glm::vec3 color, float intensity) {
+    dirLightOn        = intensity > 0.0f;
+    dirLightDirection = glm::length(direction) > 0.0001f ? glm::normalize(direction) : glm::vec3(0.0f, -1.0f, 0.0f);
+    dirLightColor     = color;
+    dirLightIntensity = intensity;
+    return *this;
+}
+
+DustEngine& DustEngine::setAmbientLight(glm::vec3 color, float intensity) {
+    ambientColor     = color;
+    ambientIntensity = intensity;
+    return *this;
+}
+
+int DustEngine::addPointLight(glm::vec3 pos, glm::vec3 color, float intensity, float radius) {
+    for (int i = 0; i < kMaxPointLights; i++) {
+        if (pointLights[i].active) continue;
+        pointLights[i] = { true, pos, color, intensity, radius };
+        return i;
+    }
+    fprintf(stderr, "dust: addPointLight() — all %d slots in use\n", kMaxPointLights);
+    return -1;
+}
+
+void DustEngine::removePointLight(int handle) {
+    if (handle >= 0 && handle < kMaxPointLights) pointLights[handle].active = false;
+}
+
+int DustEngine::addSpotLight(glm::vec3 pos, glm::vec3 direction, glm::vec3 color, float intensity,
+                             float range, float innerDeg, float outerDeg) {
+    for (int i = 0; i < kMaxSpotLights; i++) {
+        if (spotLights[i].active) continue;
+        SpotLightSlot& s = spotLights[i];
+        s.active    = true;
+        s.pos       = pos;
+        s.dir       = glm::length(direction) > 0.0001f ? glm::normalize(direction) : glm::vec3(0.0f, -1.0f, 0.0f);
+        s.color     = color;
+        s.intensity = intensity;
+        s.range     = range;
+        s.innerCos  = cosf(glm::radians(innerDeg));
+        s.outerCos  = cosf(glm::radians(outerDeg));
+        return i;
+    }
+    fprintf(stderr, "dust: addSpotLight() — all %d slots in use\n", kMaxSpotLights);
+    return -1;
+}
+
+void DustEngine::removeSpotLight(int handle) {
+    if (handle >= 0 && handle < kMaxSpotLights) spotLights[handle].active = false;
+}
+
+bool DustEngine::anyLightsActive() const {
+    if (dirLightOn) return true;
+    for (auto& p : pointLights) if (p.active) return true;
+    for (auto& s : spotLights)  if (s.active)  return true;
+    return false;
+}
+
+void DustEngine::updateLightsUBO() {
+    if (!window) return;
+
+    LightsUBOData data{};
+    data.viewProj     = activeViewProj;
+    data.cameraPos    = glm::vec4(activeCamera.position, 0.0f);
+    data.dirLightDir  = glm::vec4(dirLightDirection, 0.0f);
+    data.dirLightColor= glm::vec4(dirLightColor, dirLightOn ? dirLightIntensity : 0.0f);
+    data.ambient      = glm::vec4(ambientColor, ambientIntensity);
+
+    uint32_t pointCount = 0;
+    for (auto& p : pointLights) {
+        if (!p.active || pointCount >= kMaxPointLights) continue;
+        GPUPointLight& gp = data.pointLights[pointCount++];
+        gp.posRadius      = glm::vec4(p.pos, p.radius);
+        gp.colorIntensity = glm::vec4(p.color, p.intensity);
+    }
+
+    uint32_t spotCount = 0;
+    for (auto& s : spotLights) {
+        if (!s.active || spotCount >= kMaxSpotLights) continue;
+        GPUSpotLight& gs  = data.spotLights[spotCount++];
+        gs.posRange       = glm::vec4(s.pos, s.range);
+        gs.dirInnerCos    = glm::vec4(s.dir, s.innerCos);
+        gs.colorIntensity = glm::vec4(s.color, s.intensity);
+        gs.outerCos       = glm::vec4(s.outerCos, 0.0f, 0.0f, 0.0f);
+    }
+
+    data.lightCounts = glm::vec4((float)pointCount, (float)spotCount, 0.0f, 0.0f);
+    // Only meaningful when shadowPassActive wrote a fresh one this frame —
+    // lit.frag only reads it when HAS_SHADOWS is set, so a stale matrix here
+    // otherwise is harmless.
+    data.lightSpaceViewProj = lightSpaceViewProj;
+
+    window->renderer.updateLights(data);
+}
+
+void DustEngine::setCursorLocked(bool locked) {
+    if (!window || !window->handle) return;
+    glfwSetInputMode(window->handle, GLFW_CURSOR, locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 }
 
 void DustEngine::drawMesh(Mesh& mesh, glm::vec3 position, glm::vec3 rotationAxis,
                           float rotationDeg, glm::vec3 scale) {
     if (!frameValid || !window) return;
+    // Cheap point-distance cull — skip the draw entirely once the object is
+    // past the far plane instead of relying on fog/GPU clipping to hide it
+    // (fog end is usually much shorter than farClip in practice, so this is
+    // the only thing that actually stops a far-out object from drawing).
+    if (glm::distance(activeCamera.position, position) > activeCamera.farClip) return;
     if (!renderingBegun) {
         auto& c = window->clearColor.color.float32;
         clearBackground(c[0], c[1], c[2]);
@@ -149,18 +326,45 @@ void DustEngine::drawMesh(Mesh& mesh, glm::vec3 position, glm::vec3 rotationAxis
     if (glm::length(rotationAxis) > 0.0001f)
         t = glm::rotate(t, glm::radians(rotationDeg), glm::normalize(rotationAxis));
     t = glm::scale(t, scale);
+
+    float fogColorPc[4]  = { fogColor.x, fogColor.y, fogColor.z, fogEnabled ? 1.0f : 0.0f };
+    float fogParamsPc[4] = { fogStart, fogEnd, 0.0f, 0.0f };
+
+    // Auto lit/unlit selection — see the doc comment on kMaxPointLights.
+    if (anyLightsActive()) {
+        uint32_t featureMask = shadowPassActive ? LitFeature_Shadows : 0;
+        if (shadowPassActive) {
+            // Buffer instead of drawing immediately — see endMode3D(), which
+            // replays this list into the shadow pass then the color pass.
+            shadowDrawBuffer.push_back({
+                &mesh, t, featureMask, window->renderer.defaultLitMaterialSet,
+                glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Mesh carries no Material — matches drawLit()'s default white baseColorFactor
+                glm::vec4(0.0f, 1.0f, 0.0f, 0.0f), // metallic=0, roughness=1, no emissive
+            });
+            return;
+        }
+        float materialParams[4] = { 0.0f, 1.0f, 0.0f, 0.0f }; // metallic=0, roughness=1, no emissive — Mesh carries no Material
+        window->renderer.drawLit(window->renderer.cmd(), mesh, featureMask,
+                                 vulkan, window->swapchain,
+                                 &t[0][0], window->renderer.defaultLitMaterialSet,
+                                 nullptr, fogColorPc, fogParamsPc, materialParams);
+        return;
+    }
 
     glm::mat4 mvp = activeViewProj * t;
     window->renderer.draw(window->renderer.cmd(), mesh,
                           window->renderer.defaultPipeline,
                           window->renderer.defaultLayout,
                           &mvp[0][0],
-                          window->renderer.defaultMaterialSet); // untextured — samples the 1x1 white fallback
+                          window->renderer.defaultMaterialSet, // untextured — samples the 1x1 white fallback
+                          nullptr, fogColorPc, fogParamsPc);
 }
 
 void DustEngine::drawModel(Model& model, glm::vec3 position, glm::vec3 rotationAxis,
                            float rotationDeg, glm::vec3 scale) {
     if (!frameValid || !window) return;
+    // Same cull as drawMesh() — see comment there.
+    if (glm::distance(activeCamera.position, position) > activeCamera.farClip) return;
     if (!renderingBegun) {
         auto& c = window->clearColor.color.float32;
         clearBackground(c[0], c[1], c[2]);
@@ -171,18 +375,57 @@ void DustEngine::drawModel(Model& model, glm::vec3 position, glm::vec3 rotationA
         t = glm::rotate(t, glm::radians(rotationDeg), glm::normalize(rotationAxis));
     t = glm::scale(t, scale);
 
+    float fogColorPc[4]  = { fogColor.x, fogColor.y, fogColor.z, fogEnabled ? 1.0f : 0.0f };
+    float fogParamsPc[4] = { fogStart, fogEnd, 0.0f, 0.0f };
+    bool  lit = anyLightsActive(); // auto lit/unlit selection — see kMaxPointLights' doc comment
+
     for (auto& sm : model.submeshes) {
-        glm::mat4 mvp = activeViewProj * t * sm.transform;
+        glm::mat4 world = t * sm.transform;
 
         const Material* mat = (sm.materialIndex >= 0 && (size_t)sm.materialIndex < model.materials.size())
                              ? &model.materials[sm.materialIndex] : nullptr;
-        VkDescriptorSet materialSet = mat ? mat->materialSet : window->renderer.defaultMaterialSet;
-        const float*     baseColor  = mat ? mat->baseColor : nullptr;
+        const float* baseColor = mat ? mat->baseColor : nullptr;
 
-        window->renderer.draw(window->renderer.cmd(), sm.mesh,
-                              window->renderer.defaultPipeline,
-                              window->renderer.defaultLayout,
-                              &mvp[0][0], materialSet, baseColor);
+        if (lit) {
+            uint32_t featureMask = shadowPassActive ? LitFeature_Shadows : 0;
+            if (mat) {
+                if (mat->normalTexture            >= 0) featureMask |= LitFeature_NormalMap;
+                if (mat->metallicRoughnessTexture >= 0) featureMask |= LitFeature_MetallicRoughnessMap;
+                if (mat->emissiveTexture          >= 0) featureMask |= LitFeature_EmissiveMap;
+                if (mat->occlusionTexture         >= 0) featureMask |= LitFeature_OcclusionMap;
+            }
+            VkDescriptorSet litSet = mat ? mat->litMaterialSet : window->renderer.defaultLitMaterialSet;
+            // Emissive tint collapsed to one strength scalar — see lit.frag's
+            // comment on materialParams.z for why (128-byte push budget).
+            float emissiveStrength = mat ? (mat->emissive[0] + mat->emissive[1] + mat->emissive[2]) / 3.0f : 0.0f;
+            float materialParams[4] = { mat ? mat->metallic : 0.0f, mat ? mat->roughness : 1.0f, emissiveStrength, 0.0f };
+
+            if (shadowPassActive) {
+                // Buffer instead of drawing immediately — see endMode3D().
+                glm::vec4 baseColorFactor = baseColor
+                    ? glm::vec4(baseColor[0], baseColor[1], baseColor[2], baseColor[3])
+                    : glm::vec4(1.0f);
+                shadowDrawBuffer.push_back({
+                    &sm.mesh, world, featureMask, litSet, baseColorFactor,
+                    glm::vec4(materialParams[0], materialParams[1], materialParams[2], materialParams[3]),
+                });
+                continue;
+            }
+
+            window->renderer.drawLit(window->renderer.cmd(), sm.mesh, featureMask,
+                                     vulkan, window->swapchain,
+                                     &world[0][0], litSet, baseColor,
+                                     fogColorPc, fogParamsPc, materialParams);
+        } else {
+            glm::mat4 mvp = activeViewProj * world;
+            VkDescriptorSet materialSet = mat ? mat->materialSet : window->renderer.defaultMaterialSet;
+
+            window->renderer.draw(window->renderer.cmd(), sm.mesh,
+                                  window->renderer.defaultPipeline,
+                                  window->renderer.defaultLayout,
+                                  &mvp[0][0], materialSet, baseColor,
+                                  fogColorPc, fogParamsPc);
+        }
     }
 }
 
@@ -265,8 +508,11 @@ void DustEngine::drawParticles(ParticleSystem& ps, VkDescriptorSet texSet) {
         auto& c = window->clearColor.color.float32;
         clearBackground(c[0], c[1], c[2]);
     }
+    float fogColorPc[4]  = { fogColor.x, fogColor.y, fogColor.z, fogEnabled ? 1.0f : 0.0f };
+    float fogParamsPc[4] = { fogStart, fogEnd, 0.0f, 0.0f };
     window->renderer.drawParticles(window->renderer.cmd(),
-        ps, activeViewProj, activeCamRight, activeCamUp, texSet);
+        ps, activeViewProj, activeCamRight, activeCamUp, texSet,
+        fogColorPc, fogParamsPc);
 }
 
 bool DustEngine::ensureComputePipeline() {
@@ -316,7 +562,49 @@ bool DustEngine::ensureComputePipeline() {
     bool ok = vkCreateComputePipelines(vulkan.device, VK_NULL_HANDLE, 1, &cpInfo, nullptr,
                                         &m_particleComputePipeline) == VK_SUCCESS;
     vkDestroyShaderModule(vulkan.device, compModule, nullptr);
-    return ok; // m_particleComputeSetLayout stays alive until shutdown — see its declaration
+    if (!ok) return false; // m_particleComputeSetLayout stays alive until shutdown — see its declaration
+
+    // One-time setup for the objects dispatchParticles() reuses every call —
+    // only their contents (descriptor writes, recorded commands) change.
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = vulkan.graphicsFamily;
+    if (vkCreateCommandPool(vulkan.device, &poolInfo, nullptr, &m_particleComputePool) != VK_SUCCESS)
+        return false;
+
+    VkCommandBufferAllocateInfo cbInfo{};
+    cbInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cbInfo.commandPool        = m_particleComputePool;
+    cbInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbInfo.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(vulkan.device, &cbInfo, &m_particleComputeCmd) != VK_SUCCESS)
+        return false;
+
+    VkDescriptorPoolSize poolSize{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 };
+    VkDescriptorPoolCreateInfo dpInfo{};
+    dpInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    dpInfo.maxSets       = 1;
+    dpInfo.poolSizeCount = 1;
+    dpInfo.pPoolSizes    = &poolSize;
+    if (vkCreateDescriptorPool(vulkan.device, &dpInfo, nullptr, &m_particleComputeDescPool) != VK_SUCCESS)
+        return false;
+
+    VkDescriptorSetAllocateInfo dsaInfo{};
+    dsaInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    dsaInfo.descriptorPool     = m_particleComputeDescPool;
+    dsaInfo.descriptorSetCount = 1;
+    dsaInfo.pSetLayouts        = &m_particleComputeSetLayout;
+    if (vkAllocateDescriptorSets(vulkan.device, &dsaInfo, &m_particleComputeDescSet) != VK_SUCCESS)
+        return false;
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // starts signaled — nothing to wait on yet
+    if (vkCreateFence(vulkan.device, &fenceInfo, nullptr, &m_particleComputeFence) != VK_SUCCESS)
+        return false;
+
+    return true;
 }
 
 void DustEngine::dispatchParticles(ParticleSystem& ps, float dt,
@@ -329,65 +617,29 @@ void DustEngine::dispatchParticles(ParticleSystem& ps, float dt,
     VkPipeline       usePipeline = computePipeline  != VK_NULL_HANDLE ? computePipeline  : m_particleComputePipeline;
     VkPipelineLayout useLayout   = computeLayout    != VK_NULL_HANDLE ? computeLayout    : m_particleComputeLayout;
 
-    // One-shot command buffer for the compute dispatch (runs before the frame's graphics cmd).
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.queueFamilyIndex = vulkan.graphicsFamily;
-    VkCommandPool pool;
-    vkCreateCommandPool(vulkan.device, &poolInfo, nullptr, &pool);
+    // Wait for last dispatch's commands to finish before reusing the pool/cmd/
+    // descriptor set — by the time we get back here (a whole frame later) the
+    // GPU has normally long since finished, so this rarely actually blocks.
+    vkWaitForFences(vulkan.device, 1, &m_particleComputeFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vulkan.device, 1, &m_particleComputeFence);
 
-    VkCommandBufferAllocateInfo cbInfo{};
-    cbInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cbInfo.commandPool        = pool;
-    cbInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cbInfo.commandBufferCount = 1;
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(vulkan.device, &cbInfo, &cmd);
+    VkCommandBuffer cmd = m_particleComputeCmd;
+    vkResetCommandBuffer(cmd, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
-    // Allocate a temporary descriptor set for the SSBO.
-    // We use a tiny throwaway pool — this is fine for now since
-    // dispatchParticles is called once per frame, not in a tight inner loop.
-    VkDescriptorSetLayoutBinding ssboBinding{};
-    ssboBinding.binding        = 0;
-    ssboBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    ssboBinding.descriptorCount= 1;
-    ssboBinding.stageFlags     = VK_SHADER_STAGE_COMPUTE_BIT;
-    VkDescriptorSetLayoutCreateInfo dslInfo{};
-    dslInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dslInfo.bindingCount = 1;
-    dslInfo.pBindings    = &ssboBinding;
-    VkDescriptorSetLayout dsl;
-    vkCreateDescriptorSetLayout(vulkan.device, &dslInfo, nullptr, &dsl);
-
-    VkDescriptorPoolSize poolSize{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 };
-    VkDescriptorPoolCreateInfo dpInfo{};
-    dpInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    dpInfo.maxSets       = 1;
-    dpInfo.poolSizeCount = 1;
-    dpInfo.pPoolSizes    = &poolSize;
-    VkDescriptorPool dp;
-    vkCreateDescriptorPool(vulkan.device, &dpInfo, nullptr, &dp);
-
-    VkDescriptorSetAllocateInfo dsaInfo{};
-    dsaInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    dsaInfo.descriptorPool     = dp;
-    dsaInfo.descriptorSetCount = 1;
-    dsaInfo.pSetLayouts        = &dsl;
-    VkDescriptorSet ds;
-    vkAllocateDescriptorSets(vulkan.device, &dsaInfo, &ds);
-
+    // Descriptor set structure is allocated once in ensureComputePipeline();
+    // only its contents (which particle buffer it points at) update per call.
     VkDescriptorBufferInfo bufInfo{};
     bufInfo.buffer = ps.particleBuffer();
     bufInfo.offset = 0;
     bufInfo.range  = VK_WHOLE_SIZE;
     VkWriteDescriptorSet write{};
     write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet          = ds;
+    write.dstSet          = m_particleComputeDescSet;
     write.dstBinding      = 0;
     write.descriptorCount = 1;
     write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -395,7 +647,7 @@ void DustEngine::dispatchParticles(ParticleSystem& ps, float dt,
     vkUpdateDescriptorSets(vulkan.device, 1, &write, 0, nullptr);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, usePipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, useLayout, 0, 1, &ds, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, useLayout, 0, 1, &m_particleComputeDescSet, 0, nullptr);
 
     struct { float dt; float gravityY; float drag; uint32_t count; } pc;
     pc.dt       = dt;
@@ -426,12 +678,8 @@ void DustEngine::dispatchParticles(ParticleSystem& ps, float dt,
     submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers    = &cmd;
-    vkQueueSubmit(vulkan.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(vulkan.graphicsQueue);
-
-    vkDestroyDescriptorPool(vulkan.device, dp, nullptr);
-    vkDestroyDescriptorSetLayout(vulkan.device, dsl, nullptr);
-    vkDestroyCommandPool(vulkan.device, pool, nullptr);
+    vkQueueSubmit(vulkan.graphicsQueue, 1, &submitInfo, m_particleComputeFence);
+    m_particleComputeFencePending = true;
 }
 
 // ── DustUI ───────────────────────────────────────────────────────────────
@@ -456,6 +704,50 @@ void DustEngine::endUI() {
     // magnified with its bottom/right edge outside the render area.
     VkExtent2D screenSize = window->swapchain.extent;
     UI::Rect viewport{ 0.0f, 0.0f, (float)screenSize.width, (float)screenSize.height };
+
+    // World/Hand layer projection (UITimeline.md Phase 10) — must run before
+    // layout() since it's what turns worldPos/handOffset into the anchor
+    // layout() actually reads. Top-level widgets only (see the MVP-scope
+    // comment on Widget::layer): each is walked directly rather than via
+    // forEachWidget so nested World/Hand widgets are left alone rather than
+    // silently mis-anchored.
+    for (UI::Widget& w : uiRoot.children) {
+        if (w.layer != UI::Layer::World && w.layer != UI::Layer::Hand) continue;
+
+        glm::vec3 worldPos = w.worldPos;
+        if (w.layer == UI::Layer::Hand) {
+            worldPos = activeCamera.position
+                     + activeCamera.forward() * w.handOffset.x
+                     + activeCamera.right()   * w.handOffset.y
+                     + activeCamera.up()      * w.handOffset.z;
+        }
+
+        glm::vec4 clip = activeViewProj * glm::vec4(worldPos, 1.0f);
+        if (clip.w <= 0.0001f) { w.offScreen = true; continue; } // behind the camera
+        w.offScreen = false;
+
+        float ndcX = clip.x / clip.w, ndcY = clip.y / clip.w;
+        float screenX = (ndcX * 0.5f + 0.5f) * viewport.w;
+        float screenY = (ndcY * 0.5f + 0.5f) * viewport.h;
+
+        // Anchor::Center against the (0,0,W,H) viewport basis resolves to
+        // (W/2,H/2) + offset — offsetting by (screenX-W/2, screenY-H/2)
+        // lands the widget's center exactly on the projected point.
+        w.hasAnchor  = true;
+        w.anchorType = UI::Anchor::Center;
+        w.anchorOffsetX = px(screenX - viewport.w * 0.5f);
+        w.anchorOffsetY = px(screenY - viewport.h * 0.5f);
+
+        // Depth-sort World widgets among themselves only — farther objects
+        // get a more negative zIndex so nearer ones draw on top. Not real
+        // occlusion against 3D scene geometry (no depth buffer read here),
+        // just relative ordering between World-layer widgets — see the
+        // MVP-scope comment on Widget::layer.
+        if (w.layer == UI::Layer::World) {
+            float dist = glm::distance(activeCamera.position, worldPos);
+            w.zIndex = -(int)(dist * 100.0f);
+        }
+    }
 
     uiRoot.layout(viewport);
 

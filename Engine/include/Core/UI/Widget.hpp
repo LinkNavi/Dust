@@ -9,6 +9,7 @@
 #include <functional>
 #include <algorithm>
 #include <vulkan/vulkan.h>
+#include <glm/glm.hpp>
 
 namespace Dust::UI {
 
@@ -24,11 +25,13 @@ enum class AlignItems { Start, Center, End, Stretch };
 // (UITimeline.md Phase 10). Background is for anything that should sit under
 // normal HUD chrome (a vignette, a backdrop dim), Overlay for things that
 // must win regardless of what the HUD does (modals, tooltips, debug
-// readouts). World-space UI — widget trees projected onto a quad in the 3D
-// scene — is the other half of Phase 10 and isn't built yet; it needs the
-// camera projection rather than just a sort key, so it's a Layer value that
-// doesn't exist on purpose rather than one that silently does nothing.
-enum class Layer { Background = 0, HUD = 1, Overlay = 2 };
+// readouts). World/Hand sit between Background and HUD — game-world
+// markers (nametags, waypoint labels) and view-locked gadgets (a crosshair)
+// should read as "in the scene", never on top of real HUD chrome or a
+// modal's Overlay scrim. See Widget::worldPos/.world()/.hand() below —
+// endUI() projects them through the active beginMode3D() camera and treats
+// the rest as an ordinary anchored screen rect (DustEngine::endUI()).
+enum class Layer { Background = 0, World = 1, Hand = 2, HUD = 3, Overlay = 4 };
 
 // Value-type fluent builder — everything is a Widget, layouts (Row/Column/
 // Stack) are just Widgets with layoutMode set, components are C++ functions
@@ -166,6 +169,21 @@ struct Widget {
     // whole subtree.
     Layer layer  = Layer::HUD;
     int   zIndex = 0;
+
+    // ── World/Hand layer anchor (UITimeline.md Phase 10) ── set by
+    // .world()/.hand(); read once by DustEngine::endUI() before layout()
+    // runs, which projects worldPos (or the camera-relative offset, for
+    // Hand) through the active beginMode3D() camera and turns the result
+    // into an ordinary Anchor::Center + pixel offset, so everything past
+    // that point (size/hover/click/draw) is the same screen-rect code every
+    // other widget uses. MVP scope: only top-level ui.child(...) widgets are
+    // supported (anchor math assumes the viewport is the parent content
+    // rect — see endUI()), and there's no raycast hit-test or 3D occlusion
+    // against scene geometry, only back-to-front distance sort among World
+    // widgets themselves.
+    glm::vec3 worldPos       = { 0.0f, 0.0f, 0.0f }; // Layer::World: absolute world position
+    glm::vec3 handOffset     = { 0.0f, 0.0f, 0.0f }; // Layer::Hand: (forward, right, up) offsets from camera
+    bool      offScreen      = false; // computed by endUI() — behind the camera, don't draw/hit-test
 
     // ── layout ──
     LayoutMode        layoutMode = LayoutMode::None;
@@ -372,6 +390,19 @@ struct Widget {
     Widget& z(int index)      { zIndex = index; return *this; }
     Widget& setLayer(Layer l) { layer  = l;     return *this; }
 
+    // Anchors this widget to a fixed point in the 3D scene (a nametag over
+    // an NPC, a waypoint marker). Top-level ui.child(...) only — see the
+    // MVP-scope comment on `layer` above.
+    Widget& world(glm::vec3 pos) { layer = Layer::World; worldPos = pos; return *this; }
+
+    // View-locked: recomputed every frame as camera.position +
+    // camera.forward()*fwd + camera.right()*right + camera.up()*up — a
+    // crosshair or held-item icon that rides along with the camera instead
+    // of sitting still in the world.
+    Widget& hand(float fwd, float right, float up = 0.0f) {
+        layer = Layer::Hand; handOffset = { fwd, right, up }; return *this;
+    }
+
 
     Widget& child(Widget w) { children.push_back(std::move(w)); return *this; }
 
@@ -406,8 +437,8 @@ struct Widget {
     // needs to be drawn (has a background or a visible border) — used by
     // the UI renderer to walk the tree after layout().
     void forEachVisible(const std::function<void(const Widget&)>& fn) const {
-        if (hasBackground || computedBorderWidth > 0.0f || hasShadow ||
-            spriteSet != VK_NULL_HANDLE || shaderPipeline != VK_NULL_HANDLE)
+        if (!offScreen && (hasBackground || computedBorderWidth > 0.0f || hasShadow ||
+            spriteSet != VK_NULL_HANDLE || shaderPipeline != VK_NULL_HANDLE))
             fn(*this);
         for (auto& c : children)
             c.forEachVisible(fn);
@@ -417,7 +448,7 @@ struct Widget {
     // forEachVisible since text goes through a different draw path
     // (font/glyph batching, not a rounded-rect quad).
     void forEachText(const std::function<void(const Widget&)>& fn) const {
-        if (hasText && !textContent.empty())
+        if (!offScreen && hasText && !textContent.empty())
             fn(*this);
         for (auto& c : children)
             c.forEachText(fn);
@@ -452,13 +483,13 @@ struct Widget {
     }
 
     bool isVisibleQuad() const {
-        return hasBackground || computedBorderWidth > 0.0f || hasShadow ||
-               spriteSet != VK_NULL_HANDLE || shaderPipeline != VK_NULL_HANDLE;
+        return !offScreen && (hasBackground || computedBorderWidth > 0.0f || hasShadow ||
+               spriteSet != VK_NULL_HANDLE || shaderPipeline != VK_NULL_HANDLE);
     }
-    bool hasDrawableText() const { return hasText && !textContent.empty(); }
+    bool hasDrawableText() const { return !offScreen && hasText && !textContent.empty(); }
 
     void forEachInteractive(const std::function<void(const Widget&)>& fn) const {
-        if (isInteractive())
+        if (!offScreen && isInteractive())
             fn(*this);
         for (auto& c : children)
             c.forEachInteractive(fn);

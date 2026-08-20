@@ -15,8 +15,8 @@ Entity Registry::create() {
 
 void Registry::destroy(Entity e) {
     if (!alive(e)) return;
-    for (auto& [_, pool] : pools_)
-        pool->remove(e.index);
+    for (auto& pool : pools_)
+        if (pool) pool->remove(e.index);
     ++gens_[e.index];
     free_.push_back(e.index);
 }

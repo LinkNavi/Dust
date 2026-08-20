@@ -8,6 +8,8 @@
 
 namespace Dust {
 
+struct DustEngine; // fwd decl only — Camera itself stays engine/window-agnostic
+
 // Simple free-fly perspective camera.
 struct Camera {
     glm::vec3 position = { 0.0f, 0.0f, 3.0f };
@@ -33,5 +35,14 @@ struct Camera {
     // representation the rest of Camera (rotate()) is built around.
     void lookAt(glm::vec3 target);
 };
+
+// Free function, not a Camera method — Camera is deliberately engine/window-
+// agnostic (raw deltas only, never reaches into GLFW/Input itself). Call
+// once per frame while the caller wants fly controls active (e.g. RMB held);
+// reads WASD + Space/LeftShift and mouseDelta() from `engine` and feeds them
+// into camera.rotate()/camera.position. mouseDelta() is already capture-
+// aware, so this goes quiet whenever DustUI has mouse focus.
+void updateFlyCamera(Camera& camera, DustEngine& engine, float dt,
+                      float moveSpeed = 5.0f, float mouseSensitivity = 0.15f);
 
 } // namespace Dust

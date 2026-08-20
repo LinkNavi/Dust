@@ -16,7 +16,9 @@
 #include <functional>
 #include <list>
 #include <unordered_map>
+#include <array>
 #include <string>
+#include <vector>
 #include <glm/glm.hpp>
 
 namespace Dust {
@@ -66,6 +68,71 @@ struct DustEngine {
     // Sets the camera used by drawModel()/drawMesh() calls made until endMode3D().
     void beginMode3D(const Camera& camera);
     void endMode3D();
+
+    // ── Fog — cheap distance fog for drawModel()/drawMesh(), mixing shaded
+    // color toward fogColor between fogStart/fogEnd (view-space distance
+    // from the camera, derived for free from clip.w in default.vert — no
+    // extra draw/pass/texture). Off by default; chainable to match the
+    // UI widget setter style. start/end in the same world units as Camera.
+    DustEngine& setFog(bool enabled, glm::vec3 color = { 0.5f, 0.5f, 0.5f },
+                        float start = 10.0f, float end = 50.0f) {
+        fogEnabled = enabled; fogColor = color; fogStart = start; fogEnd = end;
+        return *this;
+    }
+
+    // ── Lighting — Blinn-Phong (Shaders/lit.vert/lit.frag), NOT full PBR —
+    // cheap enough for low-end GPUs. Auto-selected: drawModel()/drawMesh()
+    // switch to the lit pipeline the moment any light below is configured
+    // (a directional light with intensity > 0, or at least one active
+    // point/spot), and keep using the existing unlit default pipeline
+    // otherwise — an existing unlit demo that never calls any of these
+    // keeps rendering exactly as before, zero-cost. See DustEngine.cpp's
+    // drawModel()/drawMesh() and anyLightsActive().
+    static constexpr int kMaxPointLights = (int)Dust::kMaxPointLights; // see Renderer.hpp — shared with the lit shader's fixed-size arrays
+    static constexpr int kMaxSpotLights  = (int)Dust::kMaxSpotLights;
+
+    // One directional "sun" light. direction is the way the light travels
+    // (e.g. {0,-1,0} shines straight down); intensity 0 turns it off.
+    DustEngine& setDirectionalLight(glm::vec3 direction, glm::vec3 color, float intensity);
+
+    // Flat ambient term added under every light — a cheap stand-in for real
+    // indirect lighting, same "not PBR, cheap" reasoning as the Blinn-Phong
+    // model itself.
+    DustEngine& setAmbientLight(glm::vec3 color, float intensity);
+
+    // Fixed-slot lights (kMaxPointLights/kMaxSpotLights total, matching the
+    // lit shader's fixed-size arrays — no dynamic branching on GPU). Returns
+    // a handle for removePointLight()/removeSpotLight(), or -1 if every slot
+    // is already in use. radius/range is the distance the light's
+    // contribution falls off to zero.
+    int  addPointLight(glm::vec3 pos, glm::vec3 color, float intensity, float radius);
+    void removePointLight(int handle);
+
+    // innerDeg/outerDeg bound the cone's soft edge — full intensity inside
+    // innerDeg, fading to zero at outerDeg (outerDeg should be >= innerDeg).
+    int  addSpotLight(glm::vec3 pos, glm::vec3 direction, glm::vec3 color, float intensity,
+                      float range, float innerDeg = 20.0f, float outerDeg = 30.0f);
+    void removeSpotLight(int handle);
+
+    // ── Directional shadow map (Shaders/shadow.vert/frag, Renderer::shadowImage) ──
+    // Off by default. Only takes effect when a directional light is also
+    // configured (setDirectionalLight with intensity > 0) — no directional
+    // light means the shadow pass is skipped, not an error, same as calling
+    // this before any light exists at all. See DustEngine.cpp's endMode3D().
+    DustEngine& setShadowsEnabled(bool enabled) { shadowsEnabled = enabled; return *this; }
+
+    // Bounds of the light-space orthographic frustum used to render the
+    // shadow map — center of the box in world space, half-extent (box is
+    // 2*halfExtent on a side, in the plane perpendicular to the light), and
+    // near/far along the light's own direction. Defaults cover roughly a
+    // 20x20 unit area, which is enough for this repo's demo scene without
+    // ever needing to be called. Kept tight (not some huge default like
+    // 1000) — a directional shadow map's usable resolution is inversely
+    // proportional to how much world space it has to cover.
+    DustEngine& setShadowBounds(glm::vec3 center, float halfExtent, float near = 1.0f, float far = 40.0f) {
+        shadowCenter = center; shadowHalfExtent = halfExtent; shadowNear = near; shadowFar = far;
+        return *this;
+    }
 
     // ── Model — loaded assets (OBJ or anything DustPacker ran through
     // assimp: fbx/gltf/glb/dae/stl/ply/3ds/...). One submesh/no material for
@@ -217,12 +284,92 @@ struct DustEngine {
     bool uiWantsMouse() const;
     bool uiWantsKeyboard() const;
 
+    // Locks/hides the cursor for mouselook (GLFW_CURSOR_DISABLED gives
+    // unbounded relative deltas — exactly what mouseDelta() wants while
+    // flying) or restores normal cursor behavior for UI interaction.
+    void setCursorLocked(bool locked);
+
 private:
     glm::mat4  activeViewProj{ 1.0f };
     glm::vec3  activeCamRight{ 1.0f, 0.0f, 0.0f };
     glm::vec3  activeCamUp   { 0.0f, 1.0f, 0.0f };
+    // Copied (not referenced) in beginMode3D — cheap struct, and drawModel/
+    // drawMesh's distance cull and World/Hand UI projection both need
+    // position/farClip/forward() after the caller's Camera may have gone
+    // out of scope for the frame.
+    Camera     activeCamera;
     bool       frameValid     = false;
     bool       renderingBegun = false;
+
+    // Fog state — see setFog(); read by drawMesh()/drawModel() each draw.
+    bool       fogEnabled = false;
+    glm::vec3  fogColor{ 0.5f, 0.5f, 0.5f };
+    float      fogStart = 10.0f;
+    float      fogEnd   = 50.0f;
+
+    // Lighting state — see setDirectionalLight()/setAmbientLight()/
+    // addPointLight()/addSpotLight(). Pushed into Renderer::lightsSet's UBO
+    // once per frame by updateLightsUBO() (called from beginMode3D(), which
+    // is also where the camera this lighting is relative to becomes known),
+    // not per draw — see LightsUBOData's doc comment in Renderer.hpp.
+    bool       dirLightOn         = false;
+    glm::vec3  dirLightDirection{ 0.0f, -1.0f, 0.0f };
+    glm::vec3  dirLightColor{ 1.0f, 1.0f, 1.0f };
+    float      dirLightIntensity  = 0.0f;
+    glm::vec3  ambientColor{ 0.03f, 0.03f, 0.03f };
+    float      ambientIntensity   = 1.0f;
+
+    struct PointLightSlot {
+        bool      active    = false;
+        glm::vec3 pos{ 0.0f };
+        glm::vec3 color{ 1.0f };
+        float     intensity = 0.0f;
+        float     radius    = 1.0f;
+    };
+    struct SpotLightSlot {
+        bool      active    = false;
+        glm::vec3 pos{ 0.0f };
+        glm::vec3 dir{ 0.0f, -1.0f, 0.0f };
+        glm::vec3 color{ 1.0f };
+        float     intensity = 0.0f;
+        float     range     = 1.0f;
+        float     innerCos  = 1.0f; // cos(0deg) — precomputed at addSpotLight() time
+        float     outerCos  = 0.0f; // cos(90deg)
+    };
+    std::array<PointLightSlot, kMaxPointLights> pointLights{};
+    std::array<SpotLightSlot,  kMaxSpotLights>  spotLights{};
+
+    bool anyLightsActive() const;
+    void updateLightsUBO();
+
+    // ── Directional shadows — see setShadowsEnabled()/setShadowBounds(). ──
+    bool      shadowsEnabled   = false;
+    glm::vec3 shadowCenter{ 0.0f };
+    float     shadowHalfExtent = 10.0f; // covers this repo's demo scene's -5..+5 X range plus margin
+    float     shadowNear       = 1.0f;
+    float     shadowFar        = 40.0f;
+
+    // True for the duration of a beginMode3D()/endMode3D() bracket iff this
+    // frame is actually doing a shadow pass (shadowsEnabled && dirLightOn) —
+    // computed once in beginMode3D so drawModel()/drawMesh() only need a
+    // single bool check, not to re-derive it per draw. When false, drawing
+    // is the original immediate-mode path with zero added cost.
+    bool      shadowPassActive = false;
+    glm::mat4 lightSpaceViewProj{ 1.0f };
+
+    // One buffered lit draw call — enough to replay both the shadow pass
+    // (mesh + world only) and the color pass (everything) once the shadow
+    // map has been populated. Only populated/consumed when shadowPassActive
+    // — see drawModel()/drawMesh()/endMode3D() in DustEngine.cpp.
+    struct BufferedLitDraw {
+        Mesh*           mesh;
+        glm::mat4       world;
+        uint32_t        featureMask;
+        VkDescriptorSet litMaterialSet;
+        glm::vec4       baseColorFactor;
+        glm::vec4       materialParams;
+    };
+    std::vector<BufferedLitDraw> shadowDrawBuffer;
     UI::Widget uiRoot;
     UI::Font   uiFont;
     bool       uiFontLoaded = false;
@@ -273,6 +420,16 @@ private:
     VkDescriptorSetLayout m_particleComputeSetLayout = VK_NULL_HANDLE;
     VkPipeline       m_particleComputePipeline = VK_NULL_HANDLE;
     bool             ensureComputePipeline();
+
+    // Lazily-built once and reused every dispatchParticles() call — only the
+    // descriptor set *contents* and command buffer *recording* change per
+    // dispatch, not these Vulkan objects.
+    VkCommandPool    m_particleComputePool     = VK_NULL_HANDLE;
+    VkCommandBuffer  m_particleComputeCmd      = VK_NULL_HANDLE;
+    VkDescriptorPool m_particleComputeDescPool = VK_NULL_HANDLE;
+    VkDescriptorSet  m_particleComputeDescSet  = VK_NULL_HANDLE;
+    VkFence          m_particleComputeFence    = VK_NULL_HANDLE;
+    bool             m_particleComputeFencePending = false;
 };
 
 } // namespace Dust

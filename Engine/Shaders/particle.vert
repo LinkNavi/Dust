@@ -2,8 +2,10 @@
 
 layout(push_constant) uniform Push {
     mat4 viewProj;
-    vec4 camRight; // xyz: world-space right
-    vec4 camUp;    // xyz: world-space up
+    vec4 camRight;  // xyz: world-space right
+    vec4 camUp;     // xyz: world-space up
+    vec4 fogColor;  // rgb = fog color, a > 0.5 = enabled — matches default.frag's Push block
+    vec4 fogParams; // x = start distance, y = end distance, zw unused
 } push;
 
 // Binding 0 — unit quad (Mesh::makeQuad), per-vertex
@@ -19,6 +21,8 @@ layout(location = 7) in float instSize;  // offset 28
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec2 outUV;
+// Same trick as default.vert — clip.w is view-space distance for free.
+layout(location = 2) out float outViewDist;
 
 void main() {
     float alive = step(0.0001, instLife);
@@ -35,4 +39,5 @@ void main() {
     float alpha = clamp(instLife, 0.0, 1.0) * alive;
     outColor = vec4(1.0, 1.0, 1.0, alpha); // tinted white; texture provides color
     outUV    = inPosition.xy;
+    outViewDist = gl_Position.w;
 }

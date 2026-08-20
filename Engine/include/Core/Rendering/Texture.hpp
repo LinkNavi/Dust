@@ -31,7 +31,10 @@ static Texture loadFromFile(VulkanContext& ctx, const char* path, bool srgb = tr
     // 1x1 solid-color texture. Used as the engine-wide "no texture bound"
     // fallback (Renderer::defaultMaterialSet) so the default shader can
     // always unconditionally sample set=0/binding=0, textured or not.
-    static Texture makeSolid(VulkanContext& ctx, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+    // srgb=false is for data fallbacks (e.g. the lit pipeline's flat normal
+    // map, (128,128,255) meaning (0,0,1) tangent-space up) — same reasoning
+    // as upload()'s srgb param.
+    static Texture makeSolid(VulkanContext& ctx, uint8_t r, uint8_t g, uint8_t b, uint8_t a, bool srgb = true);
 };
 
 } // namespace Dust

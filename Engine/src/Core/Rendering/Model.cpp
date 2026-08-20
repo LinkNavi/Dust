@@ -16,9 +16,12 @@ void Model::destroy(VulkanContext& ctx, Renderer& renderer) {
     for (auto& sm : submeshes) sm.mesh.destroy();
     submeshes.clear();
 
-    for (auto& mat : materials)
+    for (auto& mat : materials) {
         if (mat.materialSet != VK_NULL_HANDLE)
             vkFreeDescriptorSets(ctx.device, renderer.materialPool, 1, &mat.materialSet);
+        if (mat.litMaterialSet != VK_NULL_HANDLE)
+            vkFreeDescriptorSets(ctx.device, renderer.litMaterialPool, 1, &mat.litMaterialSet);
+    }
     materials.clear();
 
     for (auto& tex : textures) tex.destroy(ctx);
@@ -81,6 +84,20 @@ Model loadModelFromMemory(VulkanContext& ctx, Renderer& renderer,
                                  ? out.textures[mat.baseColorTexture]
                                  : renderer.defaultWhiteTexture;
         mat.materialSet = renderer.createMaterialSet(ctx, colorTex);
+
+        // Lit material set — same five slots as Material's texture indices
+        // above, nullptr for whatever's absent (createLitMaterialSet fills
+        // in the fallback). Built eagerly here (not lazily on first lit
+        // draw) so unloadModel()/destroy() has one obvious place to free it.
+        auto texOrNull = [&](int idx) -> const Texture* {
+            return (idx >= 0 && (size_t)idx < out.textures.size()) ? &out.textures[idx] : nullptr;
+        };
+        mat.litMaterialSet = renderer.createLitMaterialSet(ctx,
+            texOrNull(mat.baseColorTexture),
+            texOrNull(mat.normalTexture),
+            texOrNull(mat.metallicRoughnessTexture),
+            texOrNull(mat.emissiveTexture),
+            texOrNull(mat.occlusionTexture));
 
         out.materials.push_back(mat);
     }

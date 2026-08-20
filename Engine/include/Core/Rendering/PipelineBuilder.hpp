@@ -37,8 +37,26 @@ struct PipelineBuilder {
     bool                depthTest   = false; // off until depth buffer added
     bool                blendEnable = false;
 
-    // User set=1 layout — null means no user descriptors
+    // Depth-only pipeline (shadow pass) — no color attachment at all, not
+    // just an unused one. See PipelineBuilder::build's dynamic-rendering
+    // setup; depthAttachmentFormat overrides swapchain.depthFormat for
+    // render targets that aren't the swapchain's own depth buffer (e.g.
+    // Renderer::shadowDepthFormat).
+    bool     depthOnly            = false;
+    VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED; // VK_FORMAT_UNDEFINED = use swapchain.depthFormat
+
+    // Rasterizer depth bias (shadow pass acne mitigation) — constant +
+    // slope-scaled, applied on top of lit.frag's own manual N·L bias.
+    bool  depthBiasEnable = false;
+    float depthBiasConstant = 0.0f;
+    float depthBiasSlope    = 0.0f;
+
+    // set=0 layout — null means no descriptors at all (and userSetLayout2 is
+    // ignored, since Vulkan set numbers can't have gaps).
     VkDescriptorSetLayout userSetLayout = VK_NULL_HANDLE;
+    // set=1 layout — e.g. Renderer::lightsSetLayout for the lit pipeline.
+    // Null means the pipeline only has set=0.
+    VkDescriptorSetLayout userSetLayout2 = VK_NULL_HANDLE;
 
     // Push constant — set size=0 to disable
     PushConstantRange pushConstant;
@@ -50,6 +68,14 @@ struct PipelineBuilder {
     // normal (non-instanced) pipeline; nothing else changes.
     std::vector<InstanceAttrib> instanceAttribs;
     uint32_t                    instanceStride = 0;
+
+    // Fragment-stage specialization constants — one uint32 per constant id
+    // (id = index into this vector, matching `layout(constant_id = N)` in
+    // the shader; bools/floats reinterpret the same 4 bytes). Empty = no
+    // VkSpecializationInfo attached, which is the common case for every
+    // pipeline except the lit ubershader's feature-flag variants (see
+    // Renderer::getLitPipeline).
+    std::vector<uint32_t> fragSpecConstants;
 
     // Build — creates layout + pipeline, caller owns both
     bool build(VulkanContext& ctx,

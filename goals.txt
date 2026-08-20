@@ -33,9 +33,40 @@ Good Rendering {
     Texture + material support (base color) [DONE] — normal/metallic-roughness/emissive/occlusion maps are imported+uploaded but unused until there's a lit shader
     Add a way to edit layers (hud layer, overlay layer, world layer, hand layer, etc) [PARTIAL] — UI side done (Background/HUD/Overlay, sorted on the flattened draw list so it never perturbs layout); world/hand layers still need the camera projection, see UITimeline.md Phase 10
     Dynamic textures (per face textures)
-    Fog
-    Bloom
+    Skybox / environment cubemap
+
+    Lighting (ubershader + feature flags — compile variants, cache by bitmask) {
+        Lit shader (PBR or Blinn-Phong) — unlocks normal/metallic/roughness maps
+        Point lights / spot lights / directional light
+        Ambient occlusion (SSAO)
+    }
+
+    Shadows (ubershader feature flags) {
+        Shadow maps (directional)
+        Cascaded shadow maps (CSM) — large worlds
+        Point light shadows (cubemap)
+    }
+
+    Performance {
+        Frustum culling
+        LOD system (swap mesh detail by distance)
+        Instanced rendering
+    }
+
+    Post-processing (optional passes — skip entirely if disabled) {
+        Fog
+        Bloom
+        Tonemapping / HDR
+        Depth of field
+        Motion blur
+        Chromatic aberration
+        Color grading / LUT
+    }
+
     Particle system [DONE] — compute-simulated, instanced billboards, textured
+    Multi-Passthrough Support
+    Reflections (cubemap or SSR)
+    Debug draw mode (wireframe, normals, bounding boxes)
     fast asf
 }
 
@@ -86,7 +117,7 @@ QOL {
 }
 
 Networking {
-    Basic networking stack for web thingies and multiplayer with custom protocol
+    Basic networking stack for web thingies and multiplayer with custom protocol [DONE]
 }
 
 Scripting {

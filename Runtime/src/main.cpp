@@ -49,6 +49,12 @@ int main() {
     Dust::Mesh triangle = Dust::Mesh::makeTriangle();
     triangle.upload(e.vulkan);
 
+    // Ground plane (shadow demo, F5 below) — just enough geometry for
+    // directional shadows to land on. makeQuad() is XY-facing; rotate flat
+    // and drop it under the object row.
+    Dust::Mesh ground = Dust::Mesh::makeQuad();
+    ground.upload(e.vulkan);
+
     // Model — loaded assets, one type whether the source was a plain OBJ or
     // anything DustPacker ran through assimp (fbx/gltf/glb/dae/stl/ply/3ds).
     // OBJ loading: single submesh, no material.
@@ -103,6 +109,19 @@ int main() {
     camera.lookAt({ 0.0f, 0.0f, 0.0f });
     camera.fovDeg = 55.0f;
 
+    // Distance fog demo — start/end picked to roughly match this scene's
+    // ~10-15 unit camera-to-object range so the far object visibly fades.
+    e.setFog(true, { 0.05f, 0.05f, 0.08f }, 8.0f, 16.0f);
+
+    // Lighting demo (Task: lit shader) — a low sun plus a couple of point
+    // lights straddling the object row, toggled with F4 below. Off by
+    // default so the existing unlit demo (and every other F1-F3 toggle) is
+    // unaffected until it's switched on — drawModel()/drawMesh() only pick
+    // the lit pipeline once a light is actually configured (see
+    // DustEngine::anyLightsActive()).
+    int warmPointLight = -1;
+    int coolPointLight = -1;
+
     float t        = 0.0f;
     float rotation = 0.0f;
 
@@ -128,15 +147,59 @@ int main() {
     static const char* kOptions[] = { "Fireball", "Ice Shard", "Chain Lightning", "Meteor", "Heal" };
     static const char* kTabs[]    = { "Stats", "Gear", "Skills" };
 
+    // Live feature toggles (Task 4) — booleans + if-guards around calls that
+    // are otherwise unconditionally on, no new settings system.
+    bool fogOn        = true;
+    bool particlesOn  = true;
+    bool worldHandOn  = true;
+    bool lightingOn   = false;
+    bool shadowsOn    = false;
+
     while (!e.shouldClose()) {
         t        += e.deltaTime();
         rotation += e.deltaTime() * 60.0f; // degrees/sec
 
+        // F1/F2/F3 — live toggles (Task 4), unused keys in this demo.
+        if (e.isKeyPressed(GLFW_KEY_F1)) { fogOn = !fogOn; e.setFog(fogOn, { 0.05f, 0.05f, 0.08f }, 8.0f, 16.0f); Dust::log("fog: ", fogOn ? "on" : "off"); }
+        if (e.isKeyPressed(GLFW_KEY_F2)) { particlesOn = !particlesOn; Dust::log("particles: ", particlesOn ? "on" : "off"); }
+        if (e.isKeyPressed(GLFW_KEY_F3)) { worldHandOn = !worldHandOn; Dust::log("world/hand UI: ", worldHandOn ? "on" : "off"); }
+        // F4 — lit shader demo (Blinn-Phong sun + point lights). drawModel()/
+        // drawMesh() switch to the lit pipeline automatically the instant a
+        // light is configured, so turning this off means calling
+        // setDirectionalLight(...,0) / removePointLight() rather than
+        // touching any drawing code.
+        if (e.isKeyPressed(GLFW_KEY_F4)) {
+            lightingOn = !lightingOn;
+            if (lightingOn) {
+                e.setDirectionalLight({ -0.4f, -0.8f, -0.3f }, { 1.0f, 0.95f, 0.85f }, 1.2f);
+                e.setAmbientLight({ 0.4f, 0.45f, 0.55f }, 0.15f);
+                warmPointLight = e.addPointLight({ -1.5f, 2.0f, 2.5f }, { 1.0f, 0.55f, 0.2f }, 3.0f, 8.0f);
+                coolPointLight = e.addPointLight({ 4.5f, 2.5f, 2.0f },  { 0.3f, 0.6f, 1.0f },  3.0f, 8.0f);
+            } else {
+                e.setDirectionalLight({ 0.0f, -1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.0f); // intensity 0 = off
+                e.removePointLight(warmPointLight);
+                e.removePointLight(coolPointLight);
+                warmPointLight = coolPointLight = -1;
+            }
+            Dust::log("lighting: ", lightingOn ? "on" : "off");
+        }
+        // F5 — directional shadow map demo. Only actually casts anything
+        // once F4 has also turned the sun on (setShadowsEnabled() is a
+        // no-op without a directional light — see its doc comment); the
+        // toggle still flips independently so it's obvious it's off by
+        // default and doesn't require re-ordering F4/F5 presses.
+        if (e.isKeyPressed(GLFW_KEY_F5)) {
+            shadowsOn = !shadowsOn;
+            e.setShadowsEnabled(shadowsOn);
+            e.setShadowBounds({ 0.0f, 0.0f, 0.0f }, 12.0f, 1.0f, 40.0f);
+            Dust::log("shadows: ", shadowsOn ? "on" : "off");
+        }
+
         // Dispatch particle compute before the graphics pass
-        e.dispatchParticles(ps, e.deltaTime());
+        if (particlesOn) e.dispatchParticles(ps, e.deltaTime());
 
         // Trickle-emit a few particles per frame so the system stays populated
-        for (int i = 0; i < 5; i++) {
+        if (particlesOn) for (int i = 0; i < 5; i++) {
             float angle = t * 3.0f + (float)i * 1.2566f; // evenly spread
             ps.emit({
                 .pos   = { 0.0f, 0.0f, 0.0f },
@@ -154,9 +217,26 @@ int main() {
         objCube.mesh().vertSlots[2].v.position[1] = 0.5f + sinf(t * 3.0f) * 0.3f;
         objCube.mesh().updateVertices();
 
+        // Right-mouse-held-to-fly — locks the cursor and drives WASD+mouselook
+        // only while RMB is down, so the UI (buttons/dropdowns/drag) stays
+        // clickable the rest of the time.
+        bool flying = e.isMouseButtonDown(GLFW_MOUSE_BUTTON_RIGHT);
+        e.setCursorLocked(flying);
+        if (flying) Dust::updateFlyCamera(camera, e, e.deltaTime());
+
         e.beginDrawing();
-            e.clearBackground(0.05f, 0.05f, 0.05f);
+            // Matches setFog()'s color exactly — otherwise fully-fogged
+            // geometry (color mixed 100% toward fogColor) still reads as a
+            // solid blob against a differently-colored background instead
+            // of blending away to nothing.
+            e.clearBackground(0.05f, 0.05f, 0.08f);
             e.beginMode3D(camera);
+                // Ground plane — flat, just under the object row, so F5's
+                // shadows have somewhere to land. makeQuad() is a 0..1 XY
+                // quad facing +Z; rotate -90 about X to lie flat (normal up)
+                // and scale/offset to roughly span the demo's -10..10 XZ range.
+                e.drawMesh(ground, { -10.0f, -0.01f, 10.0f }, { 1.0f, 0.0f, 0.0f }, -90.0f, { 20.0f, 1.0f, 20.0f });
+
                 // Spins around Z (its own face normal), not Y — a flat XY
                 // triangle rotated around Y goes edge-on twice a revolution,
                 // which is correct geometry, just a bad look for a demo.
@@ -164,7 +244,7 @@ int main() {
                 e.drawModel(objCube,     { -1.5f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, rotation);
                 e.drawModel(checkerCube, {  1.5f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, rotation);
                 e.drawModel(duck,        {  4.5f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, rotation);
-                e.drawParticles(ps, sonicSet);
+                if (particlesOn) e.drawParticles(ps, sonicSet);
             e.endMode3D();
 
             // DustUI — Phase 2 (see UITimeline.md): layout + solid rounded-
@@ -172,6 +252,26 @@ int main() {
             float playerHpPct = 0.55f + 0.45f * (sinf(t) * 0.5f + 0.5f); // animated, proves it's live per-frame
 
             auto& ui = e.beginUI();
+
+            // World/Hand layers (UITimeline.md Phase 10, Task 4 toggle F3) —
+            // a floating nametag anchored above the checker cube, and a
+            // view-locked crosshair fixed a couple units in front of the
+            // camera. Both top-level ui.child() calls, per the MVP scope
+            // (see Widget::layer's comment).
+            if (worldHandOn) {
+                ui.child(Dust::UI::Widget()
+                    .size(Dust::px(100), Dust::px(24))
+                    .background(Dust::Colors::Black.alpha(0.5f))
+                    .border(Dust::px(1), Dust::Colors::White, Dust::px(4))
+                    .text("Checker Cube", Dust::px(11), Dust::Colors::White)
+                    .align(Dust::UI::HAlign::Center)
+                    .world({ 1.5f, 1.3f, 0.0f })); // just above the checker cube demo object
+
+                ui.child(Dust::UI::Widget()
+                    .size(Dust::px(10), Dust::px(10))
+                    .background(Dust::Colors::White)
+                    .hand(3.0f, 0.0f, 0.0f)); // fixed 3 units in front of the camera
+            }
 
             // Z-ordering + layers (Phases 8/10) — declared *before* the
             // widgets it covers, but Layer::Overlay sorts it last, so it
@@ -420,6 +520,7 @@ int main() {
     }
 
     triangle.destroy();
+    ground.destroy();
     e.unloadModel(objCube);
     e.unloadModel(checkerCube);
     e.unloadModel(duck);
