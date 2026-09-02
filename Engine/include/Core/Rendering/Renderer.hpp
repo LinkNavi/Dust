@@ -213,6 +213,48 @@ struct Renderer {
     void drawShadow(VkCommandBuffer cmd, Mesh& mesh,
                     const float model[16], const float lightViewProj[16]);
 
+    // ── Skybox ── one cube (skyboxCube) drawn centered on the camera with a
+    // forced far-plane depth (see Shaders/skybox.vert). The fragment stage is
+    // swappable: skyboxPipeline samples a Cubemap, and a game can build extra
+    // procedural variants with buildSkyboxShaderPipeline() (see
+    // DustEngine::loadSkyboxShader / Shaders/skybox_gradient.frag). All of
+    // them bind through skyboxLayout and share the 112-byte push block below.
+    VkPipelineLayout skyboxLayout   = VK_NULL_HANDLE;
+    VkPipeline       skyboxPipeline = VK_NULL_HANDLE; // default: samples a cubemap
+    Mesh             skyboxCube;
+    std::vector<VkPipeline> skyboxShaderPipelines; // procedural variants, owned here
+
+    // set=0/binding=0 for the skybox — a single combined image sampler, same
+    // as materialSetLayout, but the descriptor is a samplerCube view rather
+    // than a sampler2D one. createCubemapSet() allocates from materialPool
+    // (a cube view is still VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, so the
+    // pool and layout don't care).
+    VkDescriptorSet createCubemapSet(VulkanContext& ctx, const Cubemap& cm);
+
+    // Shared push block for every skybox pipeline — matches skybox.vert /
+    // skybox.frag's `Push { mat4 viewRotProj; vec4 sunDir; vec4 params; vec4
+    // tint; }` (112 bytes, both stages).
+    struct SkyboxPush {
+        glm::mat4 viewRotProj;
+        glm::vec4 sunDir;
+        glm::vec4 params;
+        glm::vec4 tint;
+    };
+
+    // Draws the skybox cube. `pipeline` is skyboxPipeline (cubemap) or a
+    // procedural variant; `cubemapSet` is only bound for the cubemap path
+    // (null for procedural — those sample nothing). Call inside the color
+    // pass, after the camera is known.
+    void drawSkybox(VkCommandBuffer cmd, VkPipeline pipeline,
+                    const SkyboxPush& push, VkDescriptorSet cubemapSet);
+
+    // Builds a skybox pipeline pairing the stock skybox.vert with a
+    // caller-supplied fragment shader (same interface as skybox.frag). The
+    // pipeline binds through skyboxLayout; Renderer owns it and destroys it
+    // at shutdown. Returns VK_NULL_HANDLE on failure.
+    VkPipeline buildSkyboxShaderPipeline(VulkanContext& ctx, Swapchain& swapchain,
+                                         const uint32_t* fragSpv, size_t fragSpvLen);
+
     // ── DustUI ── screen-space rounded-rect/border/sprite quads (see
     // Core/UI/). One shared unit quad, instanced once per widget, so the
     // whole tree costs one draw call per texture switch rather than one per

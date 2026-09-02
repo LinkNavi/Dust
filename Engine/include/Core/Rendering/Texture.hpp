@@ -37,4 +37,31 @@ static Texture loadFromFile(VulkanContext& ctx, const char* path, bool srgb = tr
     static Texture makeSolid(VulkanContext& ctx, uint8_t r, uint8_t g, uint8_t b, uint8_t a, bool srgb = true);
 };
 
+// GPU-resident cubemap (6-layer image, VK_IMAGE_VIEW_TYPE_CUBE) + sampler.
+// The one texture type the skybox pipeline samples — see Renderer::drawSkybox
+// and DustEngine::loadCubemap(). Not a Texture: a Texture is a 2D image with
+// a 2D view, and the skybox shader's `samplerCube` needs a cube view over 6
+// array layers, which is a different image entirely.
+struct Cubemap {
+    VkImage       image   = VK_NULL_HANDLE;
+    VmaAllocation alloc   = VK_NULL_HANDLE;
+    VkImageView   view    = VK_NULL_HANDLE;
+    VkSampler     sampler = VK_NULL_HANDLE;
+    uint32_t      size    = 0; // edge length (faces are square, all the same size)
+
+    bool valid() const { return image != VK_NULL_HANDLE; }
+    void destroy(VulkanContext& ctx);
+
+    // Six RGBA8 faces in the standard cubemap order: +X, -X, +Y, -Y, +Z, -Z.
+    // Every face must be `size`x`size`. srgb=true for a color skybox (the
+    // usual case); false only if the faces encode data. Returns an invalid
+    // Cubemap on any failure.
+    static Cubemap fromFacePixels(VulkanContext& ctx, const uint8_t* faces[6],
+                                  uint32_t size, bool srgb = true);
+
+    // Same six-face order, loaded from image files (PNG/JPG/BMP/TGA via
+    // stb_image). All six must decode to the same square dimensions.
+    static Cubemap loadFromFiles(VulkanContext& ctx, const char* facePaths[6], bool srgb = true);
+};
+
 } // namespace Dust

@@ -5,8 +5,61 @@
 #include "Log.hpp"
 #include "Core/UI/PulseShader.hpp"
 #include "Core/UI/HealthBarShader.hpp"
+#include "Core/Rendering/SkyboxGradientShader.hpp"
 #include <cstdio>
 #include <cmath>
+#include <vector>
+#include <array>
+
+// Build a small environment cubemap in code — the repo ships no skybox
+// images, and this keeps the F6 demo self-contained. Each texel's world
+// direction is evaluated against a cheap sky gradient + sun disc, the same
+// idea skybox_gradient.frag uses, so the six faces line up into one sky.
+static Dust::Cubemap makeDemoCubemap(Dust::DustEngine& e) {
+    constexpr int S = 128;
+    static std::array<std::vector<uint8_t>, 6> faces;
+    const float sun[3] = { 0.34f, 0.62f, -0.20f }; // toward the sun (unit-ish)
+
+    auto dirFor = [](int f, float a, float b, float d[3]) {
+        switch (f) {
+            case 0: d[0]= 1; d[1]=-b; d[2]=-a; break; // +X
+            case 1: d[0]=-1; d[1]=-b; d[2]= a; break; // -X
+            case 2: d[0]= a; d[1]= 1; d[2]= b; break; // +Y
+            case 3: d[0]= a; d[1]=-1; d[2]=-b; break; // -Y
+            case 4: d[0]= a; d[1]=-b; d[2]= 1; break; // +Z
+            default:d[0]=-a; d[1]=-b; d[2]=-1; break; // -Z
+        }
+        float l = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+        d[0]/=l; d[1]/=l; d[2]/=l;
+    };
+
+    for (int f = 0; f < 6; f++) {
+        faces[f].resize(S * S * 4);
+        for (int y = 0; y < S; y++) for (int x = 0; x < S; x++) {
+            float a = (x + 0.5f) / S * 2.0f - 1.0f;
+            float b = (y + 0.5f) / S * 2.0f - 1.0f;
+            float d[3]; dirFor(f, a, b, d);
+
+            float up   = d[1] * 0.5f + 0.5f;
+            float r = 0.30f + 0.20f * up, g = 0.45f + 0.35f * up, bl = 0.65f + 0.30f * up;
+            if (d[1] < 0.0f) { r = 0.30f; g = 0.28f; bl = 0.26f; } // ground
+
+            float sd = d[0]*sun[0] + d[1]*sun[1] + d[2]*sun[2];
+            if (sd > 0.0f) { float s = powf(sd, 200.0f) * 1.5f; r += s; g += s*0.95f; bl += s*0.8f; }
+
+            auto px = &faces[f][(y * S + x) * 4];
+            px[0] = (uint8_t)(fminf(r, 1.0f) * 255);
+            px[1] = (uint8_t)(fminf(g, 1.0f) * 255);
+            px[2] = (uint8_t)(fminf(bl, 1.0f) * 255);
+            px[3] = 255;
+        }
+    }
+    const uint8_t* ptrs[6] = {
+        faces[0].data(), faces[1].data(), faces[2].data(),
+        faces[3].data(), faces[4].data(), faces[5].data(),
+    };
+    return Dust::Cubemap::fromFacePixels(e.vulkan, ptrs, S);
+}
 
 // Placeholder — packed with `DustPacker Models models.pack <this>`.
 // Swap for real key management once that's a thing.
@@ -103,6 +156,14 @@ int main() {
     VkPipeline pulseShader     = e.loadUIShader((const uint32_t*)ui_pulse_frag_spv, ui_pulse_frag_spv_len);
     VkPipeline healthBarShader = e.loadUIShader((const uint32_t*)ui_healthbar_frag_spv, ui_healthbar_frag_spv_len);
 
+    // ── Skybox (F6) ── swappable fragment stage: a procedural gradient
+    // shader (no images), or a cubemap (six images — synthesized here since
+    // the repo ships none). Same skybox.vert, drawn at the far plane so
+    // world geometry always sits in front of it.
+    VkPipeline skyGradient = e.loadSkyboxShader((const uint32_t*)skybox_gradient_frag_spv, skybox_gradient_frag_spv_len);
+    Dust::Cubemap skyCubemap = makeDemoCubemap(e);
+    int skyMode = 0; // 0 = off, 1 = procedural gradient, 2 = cubemap
+
     // ── Camera ── pulled back far enough to frame all four objects in a row
     Dust::Camera camera;
     camera.position = { 0.0f, 2.0f, 10.0f };
@@ -194,6 +255,11 @@ int main() {
             e.setShadowBounds({ 0.0f, 0.0f, 0.0f }, 12.0f, 1.0f, 40.0f);
             Dust::log("shadows: ", shadowsOn ? "on" : "off");
         }
+        // F6 — skybox: off -> procedural gradient shader -> cubemap.
+        if (e.isKeyPressed(GLFW_KEY_F6)) {
+            skyMode = (skyMode + 1) % 3;
+            Dust::log("skybox: ", skyMode == 0 ? "off" : skyMode == 1 ? "procedural gradient" : "cubemap");
+        }
 
         // Dispatch particle compute before the graphics pass
         if (particlesOn) e.dispatchParticles(ps, e.deltaTime());
@@ -231,6 +297,13 @@ int main() {
             // of blending away to nothing.
             e.clearBackground(0.05f, 0.05f, 0.08f);
             e.beginMode3D(camera);
+                // Skybox first — drawn at the far plane with depth writes
+                // off, so every object below still renders in front of it.
+                if (skyMode == 1)
+                    e.drawSkybox(skyGradient, { -0.34f, -0.62f, 0.20f }, { t, 0.12f, 0.0f, 0.0f });
+                else if (skyMode == 2)
+                    e.drawSkybox(skyCubemap);
+
                 // Ground plane — flat, just under the object row, so F5's
                 // shadows have somewhere to land. makeQuad() is a 0..1 XY
                 // quad facing +Z; rotate -90 about X to lie flat (normal up)
@@ -526,6 +599,7 @@ int main() {
     e.unloadModel(duck);
     ps.cleanup();
     e.unloadTexture(sonicTex);
+    e.unloadCubemap(skyCubemap);
     e.shutdown();
     return 0;
 }

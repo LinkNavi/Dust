@@ -177,6 +177,38 @@ struct DustEngine {
     // let shutdown() destroy the pool.
     VkDescriptorSet createTextureSet(const Texture& tex);
 
+    // ── Skybox / environment cubemap ─────────────────────────────────────
+    // The fragment stage is swappable: a Cubemap (six images) or a procedural
+    // shader, same skybox.vert either way. Draw it inside beginMode3D()/
+    // endMode3D() — it needs the camera. Rendered at the far plane with depth
+    // writes off, so it never occludes geometry and can be called before or
+    // after your drawModel()/drawMesh() calls. One skybox per frame; the last
+    // drawSkybox() call wins.
+
+    // Load a cubemap from six image files in the order +X, -X, +Y, -Y, +Z, -Z
+    // (all square, all the same size). unloadCubemap() before shutdown().
+    Cubemap loadCubemap(const char* facePaths[6]);
+    void    unloadCubemap(Cubemap& cm);
+
+    // Draw `cm` as the skybox, sampled by view direction. `tint` multiplies
+    // the sampled color (white = untouched).
+    void drawSkybox(const Cubemap& cm, glm::vec3 tint = { 1.0f, 1.0f, 1.0f });
+
+    // Build a procedural skybox from a fragment shader (SPIR-V, pairs with
+    // the stock skybox.vert — see Shaders/skybox_gradient.frag, embedded as
+    // skybox_gradient_frag_spv). Returns a pipeline handle for the overload
+    // below; the renderer owns and destroys it. VK_NULL_HANDLE on failure.
+    VkPipeline loadSkyboxShader(const uint32_t* fragSpv, size_t fragSpvLen);
+
+    // Draw a procedural skybox built by loadSkyboxShader(). `sunDir` is the
+    // direction the sun's light travels (same convention as
+    // setDirectionalLight). `params` is handed to the shader untouched —
+    // params.x is conventionally elapsed time, y/z/w are yours. `tint`
+    // multiplies the result.
+    void drawSkybox(VkPipeline skyboxShader, glm::vec3 sunDir = { 0.3f, -0.7f, 0.2f },
+                    glm::vec4 params = { 0.0f, 0.1f, 0.0f, 0.0f },
+                    glm::vec3 tint = { 1.0f, 1.0f, 1.0f });
+
     // ── Billboards — single camera-facing quad with a texture.
     // Call inside beginDrawing()/endDrawing() after beginMode3D().
     // size is world-space diameter. color is an RGBA tint (default white).
@@ -370,6 +402,25 @@ private:
         glm::vec4       materialParams;
     };
     std::vector<BufferedLitDraw> shadowDrawBuffer;
+
+    // ── Skybox — see drawSkybox(). One per frame, resolved in beginMode3D/
+    // endMode3D. When a shadow pass runs this frame the color pass is
+    // suspended and re-cleared around it (see endMode3D()), which would wipe
+    // an immediately-drawn skybox — so drawSkybox() stashes the resolved
+    // pipeline/push/set here and endMode3D() replays it after the shadow
+    // pass. With shadows off it's drawn immediately and none of this is used.
+    bool                 pendingSkybox = false;
+    Renderer::SkyboxPush pendingSkyboxPush{};
+    VkPipeline           pendingSkyboxPipeline = VK_NULL_HANDLE;
+    VkDescriptorSet      pendingSkyboxSet      = VK_NULL_HANDLE;
+    // Cubemap image -> its descriptor set, created on first drawSkybox(cm)
+    // and freed by unloadCubemap(). Keyed by image so a moved Cubemap value
+    // still resolves.
+    std::unordered_map<VkImage, VkDescriptorSet> skyboxCubemapSets;
+    // Shared resolve for both drawSkybox() overloads — fills pendingSkybox*/
+    // draws immediately depending on shadowPassActive.
+    void submitSkybox(VkPipeline pipeline, const Renderer::SkyboxPush& push, VkDescriptorSet set);
+
     UI::Widget uiRoot;
     UI::Font   uiFont;
     bool       uiFontLoaded = false;

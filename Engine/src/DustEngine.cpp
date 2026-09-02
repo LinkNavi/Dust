@@ -2,6 +2,8 @@
 #include "DustEngine.hpp"
 #include "Core/Rendering/ParticleComputeShaders.hpp"
 #include <glm/gtc/matrix_transform.hpp>
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -12,6 +14,20 @@ namespace {
 bool hasSuffix(const std::string& s, const char* suffix) {
     size_t n = strlen(suffix);
     return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
+}
+
+// Skybox push block — projection * rotation-only view (translation stripped
+// so the cube stays centered on the eye). See Shaders/skybox.vert.
+Renderer::SkyboxPush skyboxPush(const Camera& cam, uint32_t w, uint32_t h,
+                                glm::vec3 sunDir, glm::vec4 params, glm::vec3 tint) {
+    float aspect = (float)w / (float)(h ? h : 1);
+    Renderer::SkyboxPush p{};
+    p.viewRotProj = cam.projection(aspect) * glm::mat4(glm::mat3(cam.view()));
+    float len = glm::length(sunDir);
+    p.sunDir = glm::vec4(len > 0.0001f ? sunDir / len : glm::vec3(0.0f, -1.0f, 0.0f), 0.0f);
+    p.params = params;
+    p.tint   = glm::vec4(tint, 1.0f);
+    return p;
 }
 }
 
@@ -167,6 +183,8 @@ void DustEngine::beginMode3D(const Camera& camera) {
     // comment in Renderer.hpp. Cheap even when no lights are configured
     // (anyLightsActive() == false), so it isn't worth gating.
     updateLightsUBO();
+
+    pendingSkybox = false; // a skybox stashed last frame never carries over
 }
 
 void DustEngine::endMode3D() {
@@ -191,6 +209,14 @@ void DustEngine::endMode3D() {
     window->renderer.endShadowPass(cmd);
 
     if (wasRendering) window->renderer.beginRendering(vulkan, *window);
+
+    // Deferred skybox — the resume above re-cleared color+depth, so an
+    // immediately-drawn skybox would have been wiped. Draw it here, before
+    // the lit replay, so geometry lands in front of it.
+    if (pendingSkybox) {
+        window->renderer.drawSkybox(cmd, pendingSkyboxPipeline, pendingSkyboxPush, pendingSkyboxSet);
+        pendingSkybox = false;
+    }
 
     // Replay 2: the actual color pass, now sampling the populated shadow map.
     float fogColorPc[4]  = { fogColor.x, fogColor.y, fogColor.z, fogEnabled ? 1.0f : 0.0f };
@@ -483,6 +509,71 @@ void DustEngine::unloadTexture(Texture& tex) {
 VkDescriptorSet DustEngine::createTextureSet(const Texture& tex) {
     if (!window) return VK_NULL_HANDLE;
     return window->renderer.createMaterialSet(vulkan, tex);
+}
+
+// ── Skybox / environment cubemap ─────────────────────────────────────────
+
+Cubemap DustEngine::loadCubemap(const char* facePaths[6]) {
+    return Cubemap::loadFromFiles(vulkan, facePaths);
+}
+
+void DustEngine::unloadCubemap(Cubemap& cm) {
+    vkDeviceWaitIdle(vulkan.device);
+    auto it = skyboxCubemapSets.find(cm.image);
+    if (it != skyboxCubemapSets.end()) {
+        if (window && it->second != VK_NULL_HANDLE)
+            vkFreeDescriptorSets(vulkan.device, window->renderer.materialPool, 1, &it->second);
+        skyboxCubemapSets.erase(it);
+    }
+    cm.destroy(vulkan);
+}
+
+VkPipeline DustEngine::loadSkyboxShader(const uint32_t* fragSpv, size_t fragSpvLen) {
+    if (!window) return VK_NULL_HANDLE;
+    return window->renderer.buildSkyboxShaderPipeline(vulkan, window->swapchain, fragSpv, fragSpvLen);
+}
+
+void DustEngine::submitSkybox(VkPipeline pipeline, const Renderer::SkyboxPush& push, VkDescriptorSet set) {
+    if (!frameValid || !window || pipeline == VK_NULL_HANDLE) return;
+    if (!renderingBegun) {
+        auto& c = window->clearColor.color.float32;
+        clearBackground(c[0], c[1], c[2]);
+    }
+    if (shadowPassActive) {
+        // Color pass gets suspended + re-cleared around the shadow pass —
+        // stash and let endMode3D() replay it after (see there).
+        pendingSkybox         = true;
+        pendingSkyboxPush     = push;
+        pendingSkyboxPipeline = pipeline;
+        pendingSkyboxSet      = set;
+        return;
+    }
+    window->renderer.drawSkybox(window->renderer.cmd(), pipeline, push, set);
+}
+
+void DustEngine::drawSkybox(const Cubemap& cm, glm::vec3 tint) {
+    if (!frameValid || !window || !cm.valid()) return;
+
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    auto it = skyboxCubemapSets.find(cm.image);
+    if (it != skyboxCubemapSets.end()) {
+        set = it->second;
+    } else {
+        set = window->renderer.createCubemapSet(vulkan, cm);
+        if (set == VK_NULL_HANDLE) return;
+        skyboxCubemapSets[cm.image] = set;
+    }
+
+    Renderer::SkyboxPush push = skyboxPush(activeCamera, window->width, window->height,
+                                           glm::vec3(0.0f, -1.0f, 0.0f), glm::vec4(0.0f), tint);
+    submitSkybox(window->renderer.skyboxPipeline, push, set);
+}
+
+void DustEngine::drawSkybox(VkPipeline skyboxShader, glm::vec3 sunDir, glm::vec4 params, glm::vec3 tint) {
+    if (!frameValid || !window || skyboxShader == VK_NULL_HANDLE) return;
+    Renderer::SkyboxPush push = skyboxPush(activeCamera, window->width, window->height,
+                                           sunDir, params, tint);
+    submitSkybox(skyboxShader, push, VK_NULL_HANDLE);
 }
 
 // ── Billboards ────────────────────────────────────────────────────────────

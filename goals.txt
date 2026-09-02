@@ -33,7 +33,7 @@ Good Rendering {
     Texture + material support (base color) [DONE] — normal/metallic-roughness/emissive/occlusion maps are imported+uploaded but unused until there's a lit shader
     Add a way to edit layers (hud layer, overlay layer, world layer, hand layer, etc) [PARTIAL] — UI side done (Background/HUD/Overlay, sorted on the flattened draw list so it never perturbs layout); world/hand layers still need the camera projection, see UITimeline.md Phase 10
     Dynamic textures (per face textures)
-    Skybox / environment cubemap
+    Skybox / environment cubemap [DONE] — swappable fragment stage: a cubemap (6 images, Cubemap::loadFromFiles) or a procedural shader (loadSkyboxShader, e.g. skybox_gradient.frag), both against the stock skybox.vert; drawn far-plane with depth-write off so geometry always sits in front. See Docs.md "Skybox".
 
     Lighting (ubershader + feature flags — compile variants, cache by bitmask) {
         Lit shader (PBR or Blinn-Phong) — unlocks normal/metallic/roughness maps

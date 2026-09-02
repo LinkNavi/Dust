@@ -3,6 +3,7 @@
 #include "Core/Rendering/DefaultShaders.hpp"
 #include "Core/Rendering/LitShaders.hpp"
 #include "Core/Rendering/ShadowShaders.hpp"
+#include "Core/Rendering/SkyboxShaders.hpp"
 #include "Core/Rendering/ParticleShaders.hpp"
 #include "Core/Rendering/BillboardShaders.hpp"
 #include "Core/Rendering/ParticleSystem.hpp"
@@ -518,6 +519,40 @@ namespace Dust {
         }
         bbShader.destroy(ctx.device);
 
+        // ── Skybox pipeline (Shaders/skybox.vert/skybox.frag) ──
+        auto skyShader = ShaderModule::fromBytes(
+            ctx.device,
+            (uint32_t*)skybox_vert_spv, skybox_vert_spv_len,
+            (uint32_t*)skybox_frag_spv, skybox_frag_spv_len
+        );
+        if (!skyShader.valid()) {
+            fprintf(stderr, "dust: failed to load skybox shaders\n");
+            return false;
+        }
+        {
+            PipelineBuilder skyPb;
+            skyPb.shader         = skyShader;
+            skyPb.userSetLayout  = materialSetLayout; // set=0/binding=0 samplerCube (or unused, for procedural)
+            skyPb.cullMode       = VK_CULL_MODE_NONE;  // camera is inside the cube
+            skyPb.depthTest      = true;               // must lose to any real geometry already drawn
+            skyPb.depthWrite     = false;              // ...but never occlude geometry drawn after it
+            skyPb.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL; // forced depth 1.0 vs cleared 1.0
+            // mat4 viewRotProj + vec4 sunDir + vec4 params + vec4 tint = 112 bytes.
+            skyPb.pushConstant   = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 112 };
+            if (!skyPb.build(ctx, swapchain, skyboxLayout, skyboxPipeline)) {
+                fprintf(stderr, "dust: failed to build skybox pipeline\n");
+                skyShader.destroy(ctx.device);
+                return false;
+            }
+        }
+        skyShader.destroy(ctx.device);
+
+        skyboxCube = Mesh::makeCube();
+        if (!skyboxCube.upload(ctx)) {
+            fprintf(stderr, "dust: failed to upload skybox cube\n");
+            return false;
+        }
+
         return createFrameData(ctx);
     }
 
@@ -538,6 +573,36 @@ VkDescriptorSet Renderer::createMaterialSet(VulkanContext& ctx, const Texture& t
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfo.imageView   = tex.view;
     imageInfo.sampler     = tex.sampler;
+
+    VkWriteDescriptorSet write{};
+    write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet          = set;
+    write.dstBinding      = 0;
+    write.descriptorCount = 1;
+    write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo      = &imageInfo;
+    vkUpdateDescriptorSets(ctx.device, 1, &write, 0, nullptr);
+
+    return set;
+}
+
+VkDescriptorSet Renderer::createCubemapSet(VulkanContext& ctx, const Cubemap& cm) {
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool     = materialPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts        = &materialSetLayout;
+
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(ctx.device, &allocInfo, &set) != VK_SUCCESS) {
+        fprintf(stderr, "dust: failed to allocate cubemap descriptor set (pool exhausted?)\n");
+        return VK_NULL_HANDLE;
+    }
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView   = cm.view;
+    imageInfo.sampler     = cm.sampler;
 
     VkWriteDescriptorSet write{};
     write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -782,6 +847,11 @@ void Renderer::shutdown(VulkanContext& ctx) {
     if (particleLayout)    { vkDestroyPipelineLayout(ctx.device, particleLayout, nullptr); particleLayout = VK_NULL_HANDLE; }
     if (billboardPipeline) { vkDestroyPipeline(ctx.device, billboardPipeline, nullptr); billboardPipeline = VK_NULL_HANDLE; }
     if (billboardLayout)   { vkDestroyPipelineLayout(ctx.device, billboardLayout, nullptr); billboardLayout = VK_NULL_HANDLE; }
+    for (auto p : skyboxShaderPipelines) if (p) vkDestroyPipeline(ctx.device, p, nullptr);
+    skyboxShaderPipelines.clear();
+    if (skyboxPipeline)    { vkDestroyPipeline(ctx.device, skyboxPipeline, nullptr); skyboxPipeline = VK_NULL_HANDLE; }
+    if (skyboxLayout)      { vkDestroyPipelineLayout(ctx.device, skyboxLayout, nullptr); skyboxLayout = VK_NULL_HANDLE; }
+    skyboxCube.destroy();
     if (textPipeline)     { vkDestroyPipeline(ctx.device, textPipeline, nullptr); textPipeline = VK_NULL_HANDLE; }
     if (textLayout)       { vkDestroyPipelineLayout(ctx.device, textLayout, nullptr); textLayout = VK_NULL_HANDLE; }
     if (textInstanceBuffer) { vmaDestroyBuffer(ctx.allocator, textInstanceBuffer, textInstanceAlloc); textInstanceBuffer = VK_NULL_HANDLE; textInstanceMapped = nullptr; }
@@ -1057,6 +1127,66 @@ void Renderer::drawBillboard(VkCommandBuffer cmd,
     vkCmdSetScissor(cmd, 0, 1, &sc);
 
     vkCmdDrawIndexed(cmd, uiQuad.indexCount, 1, 0, 0, 0);
+}
+
+void Renderer::drawSkybox(VkCommandBuffer cmd, VkPipeline pipeline,
+                          const SkyboxPush& push, VkDescriptorSet cubemapSet) {
+    if (skyboxCube.dirty || pipeline == VK_NULL_HANDLE) return;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    // Only the cubemap variant reads set=0; procedural shaders declare no
+    // descriptors, so binding a set there would mismatch the layout. Both
+    // pipelines are built with skyboxLayout (userSetLayout = materialSetLayout),
+    // so a set is always legal to bind — but pass the 1x1 white fallback for
+    // procedural so the descriptor is at least valid.
+    VkDescriptorSet set = (cubemapSet != VK_NULL_HANDLE) ? cubemapSet : defaultMaterialSet;
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxLayout, 0, 1, &set, 0, nullptr);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &skyboxCube.vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(cmd, skyboxCube.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdPushConstants(cmd, skyboxLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyboxPush), &push);
+
+    VkViewport vp{ 0, 0, (float)currentExtent.width, (float)currentExtent.height, 0, 1 };
+    VkRect2D   sc{ {0, 0}, currentExtent };
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+
+    vkCmdDrawIndexed(cmd, skyboxCube.indexCount, 1, 0, 0, 0);
+}
+
+VkPipeline Renderer::buildSkyboxShaderPipeline(VulkanContext& ctx, Swapchain& swapchain,
+                                               const uint32_t* fragSpv, size_t fragSpvLen) {
+    auto shader = ShaderModule::fromBytes(ctx.device,
+        (uint32_t*)skybox_vert_spv, skybox_vert_spv_len, fragSpv, fragSpvLen);
+    if (!shader.valid()) return VK_NULL_HANDLE;
+
+    PipelineBuilder pb;
+    pb.shader         = shader;
+    pb.userSetLayout  = materialSetLayout;
+    pb.cullMode       = VK_CULL_MODE_NONE;
+    pb.depthTest      = true;
+    pb.depthWrite     = false;
+    pb.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    pb.pushConstant   = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 112 };
+
+    // Layout is identical to skyboxLayout — discard this throwaway and let
+    // the caller keep binding through skyboxLayout, same trick
+    // buildUIShaderPipeline / getLitPipeline use.
+    VkPipelineLayout throwaway = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    bool ok = pb.build(ctx, swapchain, throwaway, pipeline);
+    shader.destroy(ctx.device);
+    if (throwaway != VK_NULL_HANDLE) vkDestroyPipelineLayout(ctx.device, throwaway, nullptr);
+    if (!ok) {
+        fprintf(stderr, "dust: failed to build procedural skybox pipeline\n");
+        return VK_NULL_HANDLE;
+    }
+    skyboxShaderPipelines.push_back(pipeline);
+    return pipeline;
 }
 
 bool Renderer::beginFrame(VulkanContext& ctx, Window& window) {

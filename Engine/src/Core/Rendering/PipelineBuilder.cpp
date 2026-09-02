@@ -155,8 +155,8 @@ bool PipelineBuilder::build(VulkanContext& ctx,
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable  = depthTest ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable = depthTest ? VK_TRUE : VK_FALSE;
-    depthStencil.depthCompareOp   = VK_COMPARE_OP_LESS;
+    depthStencil.depthWriteEnable = (depthTest && depthWrite) ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp   = depthCompareOp;
 
     // ── Dynamic rendering (Vulkan 1.3+) ──
     VkPipelineRenderingCreateInfoKHR renderingInfo{};

@@ -56,4 +56,5 @@
   /home/link/Programming/Dust/Runtime/../AssetManager/include/AssetManager/PackFormat.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Log.hpp \
   /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/PulseShader.hpp \
-  /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/HealthBarShader.hpp
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/UI/HealthBarShader.hpp \
+  /home/link/Programming/Dust/Runtime/../Engine/include/Core/Rendering/SkyboxGradientShader.hpp

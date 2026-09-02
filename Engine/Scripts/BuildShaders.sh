@@ -76,5 +76,8 @@ embed_pair text      text      "$ENGINE_DIR/include/Core/UI/TextShaders.hpp"
 embed_pair particle  particle  "$ENGINE_DIR/include/Core/Rendering/ParticleShaders.hpp"
 embed_pair billboard billboard "$ENGINE_DIR/include/Core/Rendering/BillboardShaders.hpp"
 embed_pair shadow    shadow    "$ENGINE_DIR/include/Core/Rendering/ShadowShaders.hpp"
+embed_pair skybox    skybox    "$ENGINE_DIR/include/Core/Rendering/SkyboxShaders.hpp"
+# Example procedural skybox — frag only, pairs with skybox.vert
+embed_frag skybox_gradient    "$ENGINE_DIR/include/Core/Rendering/SkyboxGradientShader.hpp"
 
 embed_comp particles "$ENGINE_DIR/include/Core/Rendering/ParticleComputeShaders.hpp"

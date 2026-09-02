@@ -35,6 +35,15 @@ struct PipelineBuilder {
     // (e.g. raw identity, no Y-flip), winding will appear reversed.
     VkFrontFace         frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     bool                depthTest   = false; // off until depth buffer added
+    // Depth writes normally follow depthTest — a draw that tests depth also
+    // writes it. Set false to test without writing (the skybox: it reads the
+    // depth buffer to stay behind everything, but must not stamp the far
+    // plane into it). Ignored when depthTest is false.
+    bool                depthWrite  = true;
+    // LESS is the standard "closer wins". The skybox uses LESS_OR_EQUAL so
+    // its forced depth == 1.0 fragments survive against a cleared (1.0)
+    // depth buffer.
+    VkCompareOp         depthCompareOp = VK_COMPARE_OP_LESS;
     bool                blendEnable = false;
 
     // Depth-only pipeline (shadow pass) — no color attachment at all, not

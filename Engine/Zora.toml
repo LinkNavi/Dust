@@ -46,7 +46,7 @@ git  = "https://github.com/Chlumsky/msdfgen"
 # auto-detect can't tell build-vs-header-only apart and falls back to an
 # interactive prompt. Force it explicitly so a fresh clone never blocks on
 # stdin waiting for a "b/h" answer.
-header_only = false
+header_only = true
 # msdfgen defaults to vcpkg for its own deps (freetype/png/tinyxml2/skia) and
 # fails to configure without a working VCPKG_ROOT. Everything it needs for
 # font-atlas generation (freetype for glyph outlines, libpng for atlas I/O)

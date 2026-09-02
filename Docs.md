@@ -219,6 +219,61 @@ e.unloadModel(duck);
 
 ---
 
+## Skybox / environment cubemap
+
+Drawn at the far plane with depth writes off, so world geometry always
+renders in front of it. Call `drawSkybox()` inside `beginMode3D()` /
+`endMode3D()` — it needs the camera. One skybox per frame; the last call wins.
+The fragment stage is swappable: a **cubemap** (six images) or a **procedural
+shader**, both against the same stock `skybox.vert`.
+
+```cpp
+// ── Cubemap: six square images, order +X, -X, +Y, -Y, +Z, -Z ──
+const char* faces[6] = {
+    "sky/px.png", "sky/nx.png", "sky/py.png",
+    "sky/ny.png", "sky/pz.png", "sky/nz.png",
+};
+Dust::Cubemap sky = e.loadCubemap(faces);
+
+e.beginMode3D(camera);
+    e.drawSkybox(sky);                 // optional tint arg multiplies the sample
+    e.drawModel(...);
+e.endMode3D();
+
+e.unloadCubemap(sky); // before shutdown()
+
+// ── Procedural: a fragment shader, no images ──
+// Pairs with skybox.vert; keep skybox.frag's in/out + push block. The engine
+// ships one example, embedded as skybox_gradient_frag_spv.
+#include "Core/Rendering/SkyboxGradientShader.hpp"
+VkPipeline proceduralSky = e.loadSkyboxShader(
+    (const uint32_t*)skybox_gradient_frag_spv, skybox_gradient_frag_spv_len);
+
+e.beginMode3D(camera);
+    // sunDir = direction the sun's light travels (matches setDirectionalLight).
+    // params.x is conventionally elapsed time; y/z/w are yours to read.
+    e.drawSkybox(proceduralSky, /*sunDir*/{ -0.3f, -0.7f, 0.2f },
+                 /*params*/{ elapsedTime, 0.1f, 0.0f, 0.0f });
+e.endMode3D();
+```
+
+The custom fragment shader's interface (see `Engine/Shaders/skybox.frag`):
+
+```glsl
+layout(location = 0) in vec3 inDir; // world-space view direction, normalize it
+
+layout(push_constant) uniform Push {
+    mat4 viewRotProj;  // vertex stage only
+    vec4 sunDir;        // xyz = travel direction of the sun's light
+    vec4 params;        // x = time (by convention), yzw free
+    vec4 tint;          // rgb multiply
+} push;
+
+layout(location = 0) out vec4 fragColor;
+```
+
+---
+
 ## Shaders
 
 Default unlit shader is embedded in the engine — no files needed.
